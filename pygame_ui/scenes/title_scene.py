@@ -43,8 +43,10 @@ class TitleScene(BaseScene):
             enabled=True,
         )
 
-        # Start button (alternative to pressing space)
+        # Menu buttons
         self.start_button: Optional[Button] = None
+        self.drills_button: Optional[Button] = None
+        self.performance_button: Optional[Button] = None
         self.settings_button: Optional[Button] = None
 
     def _init_fonts(self) -> None:
@@ -56,28 +58,56 @@ class TitleScene(BaseScene):
             self._version_font = pygame.font.Font(None, 24)
 
     def _init_button(self) -> None:
-        """Initialize the start button."""
+        """Initialize menu buttons."""
         if self.start_button is None:
+            button_y_start = DIMENSIONS.SCREEN_HEIGHT - 230
+            button_spacing = 50
+
             self.start_button = Button(
                 x=DIMENSIONS.CENTER_X,
-                y=DIMENSIONS.SCREEN_HEIGHT - 150,
-                text="START GAME",
+                y=button_y_start,
+                text="PLAY GAME",
                 font_size=32,
                 on_click=self._start_game,
                 bg_color=(60, 100, 60),
                 hover_color=(80, 130, 80),
                 width=200,
-                height=50,
+                height=45,
             )
+
+            self.drills_button = Button(
+                x=DIMENSIONS.CENTER_X,
+                y=button_y_start + button_spacing,
+                text="TRAINING DRILLS",
+                font_size=28,
+                on_click=self._open_drills,
+                bg_color=(80, 80, 120),
+                hover_color=(100, 100, 150),
+                width=200,
+                height=40,
+            )
+
+            self.performance_button = Button(
+                x=DIMENSIONS.CENTER_X,
+                y=button_y_start + button_spacing * 2,
+                text="PERFORMANCE",
+                font_size=28,
+                on_click=self._open_performance,
+                bg_color=(100, 80, 60),
+                hover_color=(130, 100, 80),
+                width=200,
+                height=40,
+            )
+
             self.settings_button = Button(
                 x=DIMENSIONS.CENTER_X,
-                y=DIMENSIONS.SCREEN_HEIGHT - 90,
+                y=button_y_start + button_spacing * 3,
                 text="SETTINGS",
                 font_size=28,
                 on_click=self._open_settings,
                 bg_color=(60, 60, 80),
                 hover_color=(80, 80, 110),
-                width=160,
+                width=200,
                 height=40,
             )
 
@@ -92,6 +122,14 @@ class TitleScene(BaseScene):
         """Transition to the game scene."""
         self.change_scene("game", transition=True)
 
+    def _open_drills(self) -> None:
+        """Open the drill menu scene."""
+        self.change_scene("drill_menu", transition=True)
+
+    def _open_performance(self) -> None:
+        """Open the performance scene."""
+        self.change_scene("performance", transition=True)
+
     def _open_settings(self) -> None:
         """Open the settings scene."""
         self.change_scene("settings", transition=True)
@@ -101,12 +139,22 @@ class TitleScene(BaseScene):
         # Handle buttons
         if self.start_button and self.start_button.handle_event(event):
             return True
+        if self.drills_button and self.drills_button.handle_event(event):
+            return True
+        if self.performance_button and self.performance_button.handle_event(event):
+            return True
         if self.settings_button and self.settings_button.handle_event(event):
             return True
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE or event.key == pygame.K_RETURN:
                 self._start_game()
+                return True
+            elif event.key == pygame.K_t:
+                self._open_drills()
+                return True
+            elif event.key == pygame.K_p:
+                self._open_performance()
                 return True
             elif event.key == pygame.K_c:
                 self.crt_filter.toggle()
@@ -136,6 +184,10 @@ class TitleScene(BaseScene):
         # Update buttons
         if self.start_button:
             self.start_button.update(dt)
+        if self.drills_button:
+            self.drills_button.update(dt)
+        if self.performance_button:
+            self.performance_button.update(dt)
         if self.settings_button:
             self.settings_button.update(dt)
 
@@ -222,12 +274,16 @@ class TitleScene(BaseScene):
         prompt_text = "Press SPACE to start"
         prompt_surface = self._prompt_font.render(prompt_text, True, COLORS.TEXT_WHITE)
         prompt_surface.set_alpha(self._prompt_alpha)
-        prompt_rect = prompt_surface.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 200))
+        prompt_rect = prompt_surface.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 270))
         surface.blit(prompt_surface, prompt_rect)
 
         # Draw buttons
         if self.start_button:
             self.start_button.draw(surface)
+        if self.drills_button:
+            self.drills_button.draw(surface)
+        if self.performance_button:
+            self.performance_button.draw(surface)
         if self.settings_button:
             self.settings_button.draw(surface)
 
@@ -238,7 +294,7 @@ class TitleScene(BaseScene):
         surface.blit(version_surface, version_rect)
 
         # Draw controls hint
-        controls_text = "C: Toggle CRT filter"
+        controls_text = "T: Training | P: Performance | C: CRT filter"
         controls_surface = self._version_font.render(controls_text, True, COLORS.TEXT_MUTED)
         controls_rect = controls_surface.get_rect(bottomleft=(20, DIMENSIONS.SCREEN_HEIGHT - 20))
         surface.blit(controls_surface, controls_rect)

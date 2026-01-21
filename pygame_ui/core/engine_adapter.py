@@ -81,6 +81,8 @@ class GameSnapshot:
     can_double: bool
     can_split: bool
     can_surrender: bool
+    can_insure: bool
+    offering_insurance: bool
 
 
 class EngineAdapter:
@@ -118,6 +120,7 @@ class EngineAdapter:
         self._on_state_change: Optional[Callable[[GameState], None]] = None
         self._on_invalid_action: Optional[Callable[[str], None]] = None
         self._on_count_update: Optional[Callable[[int, float], None]] = None
+        self._on_insurance_offered: Optional[Callable[[], None]] = None
 
         # Initialize engine
         self._init_game()
@@ -167,6 +170,9 @@ class EngineAdapter:
         elif etype == EventType.INVALID_ACTION:
             if self._on_invalid_action:
                 self._on_invalid_action(data.get("message", "Invalid action"))
+        elif etype == EventType.INSURANCE_OFFERED:
+            if self._on_insurance_offered:
+                self._on_insurance_offered()
 
     def _handle_card_dealt(self, data: dict) -> None:
         """Handle a card dealt event."""
@@ -233,6 +239,7 @@ class EngineAdapter:
         on_state_change: Callable[[GameState], None] = None,
         on_invalid_action: Callable[[str], None] = None,
         on_count_update: Callable[[int, float], None] = None,
+        on_insurance_offered: Callable[[], None] = None,
     ) -> None:
         """Set UI callback functions.
 
@@ -244,6 +251,7 @@ class EngineAdapter:
             on_state_change: Called when game state changes
             on_invalid_action: Called on invalid action (message)
             on_count_update: Called when count changes (running, true)
+            on_insurance_offered: Called when insurance is offered
         """
         self._on_card_dealt = on_card_dealt
         self._on_hand_result = on_hand_result
@@ -252,6 +260,7 @@ class EngineAdapter:
         self._on_state_change = on_state_change
         self._on_invalid_action = on_invalid_action
         self._on_count_update = on_count_update
+        self._on_insurance_offered = on_insurance_offered
 
     @property
     def state(self) -> GameState:
@@ -307,6 +316,8 @@ class EngineAdapter:
                 can_double=False,
                 can_split=False,
                 can_surrender=False,
+                can_insure=False,
+                offering_insurance=False,
             )
 
         # Convert player hands
@@ -319,7 +330,7 @@ class EngineAdapter:
 
         # Convert dealer hand
         dealer_cards = []
-        hole_hidden = self.game.state in (GameState.PLAYER_TURN, GameState.DEALING)
+        hole_hidden = self.game.state in (GameState.PLAYER_TURN, GameState.DEALING, GameState.OFFERING_INSURANCE)
         for i, card in enumerate(self.game.dealer_hand.cards):
             face_up = not (i == 1 and hole_hidden)
             dealer_cards.append(UICardInfo.from_core_card(card, face_up=face_up))
@@ -347,6 +358,8 @@ class EngineAdapter:
             can_double=self.game.can_double,
             can_split=self.game.can_split,
             can_surrender=self.game.can_surrender,
+            can_insure=self.game.can_insure,
+            offering_insurance=self.game.state == GameState.OFFERING_INSURANCE,
         )
 
     # Game actions
@@ -386,6 +399,18 @@ class EngineAdapter:
         if not self.game:
             return False
         return self.game.surrender()
+
+    def take_insurance(self) -> bool:
+        """Player takes insurance."""
+        if not self.game:
+            return False
+        return self.game.take_insurance()
+
+    def decline_insurance(self) -> bool:
+        """Player declines insurance."""
+        if not self.game:
+            return False
+        return self.game.decline_insurance()
 
     def new_game(self) -> None:
         """Start a completely new game."""

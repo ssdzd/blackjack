@@ -10,11 +10,18 @@ from core.game.state import GameState
 from pygame_ui.config import ANIMATION, COLORS, DIMENSIONS
 from pygame_ui.core.animation import EaseType
 from pygame_ui.core.engine_adapter import EngineAdapter, UICardInfo
+from pygame_ui.core.particles import get_particle_system
+from pygame_ui.core.sound_manager import play_sound, get_sound_manager
 from pygame_ui.components.card import CardSprite, CardGroup
 from pygame_ui.components.counter import CountDisplay, BankrollDisplay
 from pygame_ui.components.toast import ToastManager, ToastType
 from pygame_ui.components.panel import InfoPanel
 from pygame_ui.components.button import ActionButton, Button
+from pygame_ui.components.chip import ChipStack
+from pygame_ui.components.hint_panel import BestPlayHint, BettingHint, InsurancePrompt
+
+from core.strategy.basic import BasicStrategy, Action
+from core.strategy.deviations import find_deviation, ILLUSTRIOUS_18, FAB_4
 from pygame_ui.effects.screen_shake import ScreenShake, SHAKE_IMPACT
 from pygame_ui.effects.crt_filter import CRTFilter
 from pygame_ui.scenes.base_scene import BaseScene
@@ -56,9 +63,16 @@ class GameScene(BaseScene):
         self.deck_panel: Optional[InfoPanel] = None
         self.buttons: List[ActionButton] = []
         self.bet_button: Optional[Button] = None
+        self.insurance_buttons: List[Button] = []
 
         # Current bet amount
         self.current_bet = 100
+
+        # Chip stack for bet display
+        self.bet_chips: Optional[ChipStack] = None
+
+        # Particle system
+        self.particles = get_particle_system()
 
         # Render surface
         self._render_surface: Optional[pygame.Surface] = None
@@ -66,6 +80,15 @@ class GameScene(BaseScene):
         # Animation queue for delayed card reveals
         self._pending_cards: List[tuple] = []  # (hand_type, card_info, hand_index, delay)
         self._animation_time = 0.0
+
+        # Hint components
+        self.best_play_hint: Optional[BestPlayHint] = None
+        self.betting_hint: Optional[BettingHint] = None
+        self.insurance_prompt: Optional[InsurancePrompt] = None
+        self.show_hints = True  # Toggle with B key
+
+        # Strategy for lookups
+        self.basic_strategy = BasicStrategy()
 
     def on_enter(self) -> None:
         """Initialize the game scene."""
@@ -85,6 +108,7 @@ class GameScene(BaseScene):
             on_shuffle=self._on_shuffle,
             on_count_update=self._on_count_update,
             on_invalid_action=self._on_invalid_action,
+            on_insurance_offered=self._on_insurance_offered,
         )
 
         # Initialize deck sprite
@@ -97,8 +121,18 @@ class GameScene(BaseScene):
         # Initialize UI
         self._setup_ui()
 
+        # Initialize chip stack
+        self.bet_chips = ChipStack(
+            DIMENSIONS.CENTER_X,
+            DIMENSIONS.PLAYER_HAND_Y + 60,
+            0,
+        )
+
         # Clear hands
         self._clear_hands()
+
+        # Clear particles
+        self.particles.clear()
 
     def on_exit(self) -> None:
         """Clean up when leaving the scene."""
@@ -156,6 +190,9 @@ class GameScene(BaseScene):
         # Create buttons
         self._setup_buttons()
 
+        # Initialize hint panels
+        self._setup_hints()
+
     def _setup_buttons(self) -> None:
         """Set up action buttons."""
         button_y = DIMENSIONS.PLAYER_HAND_Y + 160
@@ -206,7 +243,18 @@ class GameScene(BaseScene):
             hover_color=(80, 80, 130),
         )
 
-        self.buttons = [hit_button, stand_button, double_button, split_button]
+        surrender_button = ActionButton(
+            x=DIMENSIONS.CENTER_X + button_spacing * 2.5,
+            y=button_y,
+            text="SURRENDER",
+            action="surrender",
+            on_click=self._on_surrender,
+            hotkey="R",
+            bg_color=(100, 50, 50),
+            hover_color=(130, 70, 70),
+        )
+
+        self.buttons = [hit_button, stand_button, double_button, split_button, surrender_button]
 
         # Bet/Deal button
         self.bet_button = Button(
@@ -220,6 +268,193 @@ class GameScene(BaseScene):
             width=200,
             height=60,
         )
+
+        # Insurance buttons
+        insurance_yes = Button(
+            x=DIMENSIONS.CENTER_X - 100,
+            y=DIMENSIONS.CENTER_Y + 30,
+            text="INSURANCE",
+            font_size=28,
+            on_click=self._on_take_insurance,
+            bg_color=(80, 100, 60),
+            hover_color=(100, 130, 80),
+            width=160,
+            height=50,
+        )
+        insurance_no = Button(
+            x=DIMENSIONS.CENTER_X + 100,
+            y=DIMENSIONS.CENTER_Y + 30,
+            text="NO INSURANCE",
+            font_size=28,
+            on_click=self._on_decline_insurance,
+            bg_color=(100, 60, 60),
+            hover_color=(130, 80, 80),
+            width=160,
+            height=50,
+        )
+        self.insurance_buttons = [insurance_yes, insurance_no]
+
+    def _setup_hints(self) -> None:
+        """Set up hint panel components."""
+        # Best play hint (left side during play)
+        self.best_play_hint = BestPlayHint(
+            x=150,
+            y=DIMENSIONS.CENTER_Y + 30,
+            width=200,
+        )
+
+        # Betting hint (center during betting)
+        self.betting_hint = BettingHint(
+            x=DIMENSIONS.CENTER_X,
+            y=DIMENSIONS.CENTER_Y - 80,
+            width=180,
+        )
+
+        # Insurance prompt (center)
+        self.insurance_prompt = InsurancePrompt(
+            x=DIMENSIONS.CENTER_X,
+            y=DIMENSIONS.CENTER_Y - 50,
+        )
+
+    def _update_hints(self) -> None:
+        """Update hint displays based on game state."""
+        if not self.engine or not self.show_hints:
+            if self.best_play_hint:
+                self.best_play_hint.hide()
+            if self.betting_hint:
+                self.betting_hint.hide()
+            if self.insurance_prompt:
+                self.insurance_prompt.hide()
+            return
+
+        snapshot = self.engine.get_snapshot()
+        state = snapshot.state
+
+        # Best play hint during PLAYER_TURN
+        if state == GameState.PLAYER_TURN and self.best_play_hint:
+            self._update_best_play_hint(snapshot)
+            self.best_play_hint.show()
+        else:
+            if self.best_play_hint:
+                self.best_play_hint.hide()
+
+        # Betting hint during WAITING_FOR_BET
+        if state == GameState.WAITING_FOR_BET and self.betting_hint:
+            self.betting_hint.calculate_recommendation(
+                snapshot.true_count,
+                self.current_bet
+            )
+            self.betting_hint.show()
+        else:
+            if self.betting_hint:
+                self.betting_hint.hide()
+
+        # Insurance prompt during OFFERING_INSURANCE
+        if snapshot.offering_insurance and self.insurance_prompt:
+            self.insurance_prompt.set_true_count(snapshot.true_count)
+            self.insurance_prompt.show()
+        else:
+            if self.insurance_prompt:
+                self.insurance_prompt.hide()
+
+    def _update_best_play_hint(self, snapshot) -> None:
+        """Update the best play hint based on current hand."""
+        if not self.best_play_hint or not snapshot.player_hand_values:
+            return
+
+        # Get current hand info
+        hand_index = snapshot.current_hand_index
+        if hand_index >= len(snapshot.player_hand_values):
+            return
+
+        player_total = snapshot.player_hand_values[hand_index]
+        true_count = snapshot.true_count
+
+        # Determine hand properties
+        is_soft = False
+        is_pair = False
+        pair_rank = None
+
+        if hand_index < len(snapshot.player_hands):
+            player_cards = snapshot.player_hands[hand_index]
+            if len(player_cards) >= 2:
+                # Check for pair
+                if len(player_cards) == 2:
+                    card_values = [c.value for c in player_cards]
+                    if card_values[0] == card_values[1]:
+                        is_pair = True
+                        # Convert to numeric rank for pair table
+                        val = card_values[0]
+                        if val == "A":
+                            pair_rank = 11
+                        elif val in ("K", "Q", "J"):
+                            pair_rank = 10
+                        else:
+                            pair_rank = int(val)
+
+                # Check for soft hand (Ace counted as 11)
+                ace_count = sum(1 for c in player_cards if c.value == "A")
+                if ace_count > 0 and player_total <= 21:
+                    # Calculate if ace is being used as 11
+                    non_ace_sum = sum(
+                        10 if c.value in ("K", "Q", "J") else
+                        (int(c.value) if c.value not in ("A",) else 0)
+                        for c in player_cards
+                    )
+                    if non_ace_sum + 11 + (ace_count - 1) == player_total:
+                        is_soft = True
+
+        # Get dealer upcard
+        dealer_upcard = 10  # Default
+        if snapshot.dealer_hand:
+            dealer_card = snapshot.dealer_hand[0]
+            if dealer_card.value == "A":
+                dealer_upcard = 11
+            elif dealer_card.value in ("K", "Q", "J"):
+                dealer_upcard = 10
+            else:
+                dealer_upcard = int(dealer_card.value)
+
+        # Check for deviation first
+        deviation = find_deviation(
+            player_total=player_total,
+            is_soft=is_soft,
+            is_pair=is_pair,
+            dealer_upcard=dealer_upcard,
+            true_count=true_count,
+            include_surrender=snapshot.can_surrender,
+        )
+
+        if deviation:
+            action = deviation.get_action(true_count)
+            self.best_play_hint.set_recommendation(
+                action_name=action.name,
+                reason=f"TC {true_count:+.1f}",
+                is_deviation=deviation.should_deviate(true_count),
+                deviation_description=deviation.description[:35] if deviation.description else "",
+            )
+        else:
+            # Get basic strategy action
+            action = self.basic_strategy.get_action(
+                player_total=player_total,
+                dealer_upcard=dealer_upcard,
+                is_soft=is_soft,
+                is_pair=is_pair,
+                pair_rank=pair_rank,
+                can_double=snapshot.can_double,
+                can_surrender=snapshot.can_surrender,
+                can_split=snapshot.can_split,
+            )
+
+            # Generate reason
+            hand_desc = "soft " if is_soft else ("pair of " if is_pair else "")
+            reason = f"{hand_desc}{player_total} vs {dealer_upcard}"
+
+            self.best_play_hint.set_recommendation(
+                action_name=action.name,
+                reason=reason,
+                is_deviation=False,
+            )
 
     def _update_deck_panel(self) -> None:
         """Update the deck info panel."""
@@ -251,11 +486,18 @@ class GameScene(BaseScene):
                     button.set_enabled(snapshot.can_double)
                 elif button.action == "split":
                     button.set_enabled(snapshot.can_split)
+                elif button.action == "surrender":
+                    button.set_enabled(snapshot.can_surrender)
             else:
                 button.set_enabled(False)
 
         if self.bet_button:
             self.bet_button.set_enabled(show_bet_button)
+
+        # Insurance buttons
+        show_insurance = snapshot.offering_insurance
+        for button in self.insurance_buttons:
+            button.set_enabled(show_insurance)
 
     # Engine callbacks
 
@@ -283,6 +525,9 @@ class GameScene(BaseScene):
 
     def _spawn_card(self, hand_type: str, card_info: UICardInfo, hand_index: int) -> None:
         """Spawn a card sprite with animation."""
+        # Play card deal sound
+        play_sound("card_deal")
+
         # Create card at deck position
         card = CardSprite(
             x=self.deck_position[0],
@@ -325,6 +570,7 @@ class GameScene(BaseScene):
             card.flip(
                 to_face_up=True,
                 delay=ANIMATION.CARD_DEAL_DURATION * 0.5,
+                on_complete=lambda: play_sound("card_flip"),
             )
 
         # Rearrange other cards
@@ -352,12 +598,21 @@ class GameScene(BaseScene):
             if result == "win":
                 self.toast_manager.spawn_result("win", DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 2, amount)
                 self.screen_shake.add_trauma(0.3)
+                play_sound("win")
+                # Confetti celebration
+                self.particles.emit_fountain(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 2, "confetti", 25)
             elif result == "blackjack":
                 self.toast_manager.spawn_result("blackjack", DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 2, amount)
                 self.screen_shake.add_trauma(0.5)
+                play_sound("blackjack")
+                # Big star burst for blackjack
+                self.particles.emit_burst(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 2, "stars", 40)
+                self.particles.emit_burst(DIMENSIONS.CENTER_X - 100, DIMENSIONS.SCREEN_HEIGHT // 2, "confetti", 20)
+                self.particles.emit_burst(DIMENSIONS.CENTER_X + 100, DIMENSIONS.SCREEN_HEIGHT // 2, "confetti", 20)
             elif result == "lose":
                 self.toast_manager.spawn_result("lose", DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 2, amount)
                 self.screen_shake.add_trauma(0.4)
+                play_sound("lose")
             elif result == "push":
                 self.toast_manager.spawn_result("push", DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 2)
             elif result == "bust":
@@ -368,10 +623,15 @@ class GameScene(BaseScene):
                     ToastType.ERROR,
                 )
                 self.screen_shake.add_trauma(0.3)
+                play_sound("bust")
 
         # Update bankroll display
         if self.bankroll_display and self.engine:
             self.bankroll_display.set_value(self.engine.bankroll)
+
+        # Clear bet chips after result
+        if self.bet_chips:
+            self.bet_chips.amount = 0
 
     def _on_dealer_reveal(self, card_info: UICardInfo) -> None:
         """Handle dealer hole card reveal."""
@@ -380,7 +640,7 @@ class GameScene(BaseScene):
             if not card.is_face_up:
                 card.card_value = card_info.value
                 card.card_suit = card_info.suit
-                card.flip(to_face_up=True)
+                card.flip(to_face_up=True, on_complete=lambda: play_sound("card_flip"))
                 break
 
     def _on_shuffle(self) -> None:
@@ -393,6 +653,7 @@ class GameScene(BaseScene):
                 ToastType.WARNING,
             )
         self.screen_shake.add_trauma(0.2)
+        play_sound("shuffle")
         self._update_deck_panel()
 
     def _on_count_update(self, running: int, true: float) -> None:
@@ -415,6 +676,15 @@ class GameScene(BaseScene):
                 duration=1.0,
             )
 
+    def _on_insurance_offered(self) -> None:
+        """Handle insurance offer event."""
+        # Show insurance prompt with current count
+        if self.insurance_prompt and self.engine:
+            self.insurance_prompt.set_true_count(self.engine.true_count)
+            if self.show_hints:
+                self.insurance_prompt.show()
+        self._update_button_states()
+
     # Player actions
 
     def _on_deal(self) -> None:
@@ -429,30 +699,69 @@ class GameScene(BaseScene):
 
         # Place bet
         if self.engine.place_bet(self.current_bet):
+            # Update chip stack to show bet
+            if self.bet_chips:
+                self.bet_chips.amount = self.current_bet
+            play_sound("chip_stack")
             self._update_button_states()
 
     def _on_hit(self) -> None:
         """Player hits."""
         if self.engine:
+            play_sound("button_click")
             self.engine.hit()
             self._update_button_states()
 
     def _on_stand(self) -> None:
         """Player stands."""
         if self.engine:
+            play_sound("button_click")
             self.engine.stand()
             self._update_button_states()
 
     def _on_double(self) -> None:
         """Player doubles down."""
         if self.engine:
+            play_sound("button_click")
+            # Add extra chips for double
+            if self.bet_chips:
+                self.bet_chips.amount = self.bet_chips.amount + self.current_bet
+            play_sound("chip_stack")
             self.engine.double_down()
             self._update_button_states()
 
     def _on_split(self) -> None:
         """Player splits."""
         if self.engine:
+            play_sound("button_click")
+            play_sound("chip_stack")
             self.engine.split()
+            self._update_button_states()
+
+    def _on_surrender(self) -> None:
+        """Player surrenders."""
+        if self.engine:
+            play_sound("button_click")
+            self.engine.surrender()
+            self._update_button_states()
+
+    def _on_take_insurance(self) -> None:
+        """Player takes insurance."""
+        if self.engine:
+            play_sound("button_click")
+            play_sound("chip_stack")
+            self.engine.take_insurance()
+            if self.insurance_prompt:
+                self.insurance_prompt.hide()
+            self._update_button_states()
+
+    def _on_decline_insurance(self) -> None:
+        """Player declines insurance."""
+        if self.engine:
+            play_sound("button_click")
+            self.engine.decline_insurance()
+            if self.insurance_prompt:
+                self.insurance_prompt.hide()
             self._update_button_states()
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -469,6 +778,11 @@ class GameScene(BaseScene):
             if button.enabled and button.handle_event(event):
                 return True
 
+        # Handle insurance buttons
+        for button in self.insurance_buttons:
+            if button.enabled and button.handle_event(event):
+                return True
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_h:
                 self._on_hit()
@@ -482,9 +796,32 @@ class GameScene(BaseScene):
             elif event.key == pygame.K_p:
                 self._on_split()
                 return True
+            elif event.key == pygame.K_r:
+                self._on_surrender()
+                return True
             elif event.key == pygame.K_SPACE or event.key == pygame.K_RETURN:
                 if self.engine and self.engine.state == GameState.WAITING_FOR_BET:
                     self._on_deal()
+                return True
+            elif event.key == pygame.K_y:
+                if self.engine and self.engine.get_snapshot().offering_insurance:
+                    self._on_take_insurance()
+                return True
+            elif event.key == pygame.K_n:
+                if self.engine and self.engine.get_snapshot().offering_insurance:
+                    self._on_decline_insurance()
+                return True
+            elif event.key == pygame.K_b:
+                self.show_hints = not self.show_hints
+                state = "ON" if self.show_hints else "OFF"
+                if self.toast_manager:
+                    self.toast_manager.spawn(
+                        f"Hints: {state}",
+                        DIMENSIONS.CENTER_X,
+                        100,
+                        ToastType.INFO,
+                        duration=1.0,
+                    )
                 return True
             elif event.key == pygame.K_c:
                 enabled = self.crt_filter.toggle()
@@ -497,6 +834,10 @@ class GameScene(BaseScene):
                         ToastType.INFO,
                         duration=1.0,
                     )
+                return True
+            elif event.key == pygame.K_g:
+                # Open strategy chart as overlay
+                self.push_scene("strategy_chart", transition=True)
                 return True
             elif event.key == pygame.K_ESCAPE:
                 self.change_scene("title", transition=True)
@@ -544,9 +885,27 @@ class GameScene(BaseScene):
             button.update(dt)
         if self.bet_button:
             self.bet_button.update(dt)
+        for button in self.insurance_buttons:
+            button.update(dt)
 
         # Update button states
         self._update_button_states()
+
+        # Update hints
+        self._update_hints()
+        if self.best_play_hint:
+            self.best_play_hint.update(dt)
+        if self.betting_hint:
+            self.betting_hint.update(dt)
+        if self.insurance_prompt:
+            self.insurance_prompt.update(dt)
+
+        # Update chip stack
+        if self.bet_chips:
+            self.bet_chips.update(dt)
+
+        # Update particles
+        self.particles.update(dt)
 
         # Update effects
         self.screen_shake.update(dt)
@@ -609,16 +968,36 @@ class GameScene(BaseScene):
             self.bankroll_display.draw(surface)
 
         # Buttons - show appropriate set
-        if self.engine and self.engine.state == GameState.WAITING_FOR_BET:
-            if self.bet_button:
-                self.bet_button.draw(surface)
-        else:
-            for button in self.buttons:
-                button.draw(surface)
+        if self.engine:
+            snapshot = self.engine.get_snapshot()
+            if snapshot.state == GameState.WAITING_FOR_BET:
+                if self.bet_button:
+                    self.bet_button.draw(surface)
+            elif snapshot.offering_insurance:
+                for button in self.insurance_buttons:
+                    button.draw(surface)
+            else:
+                for button in self.buttons:
+                    button.draw(surface)
+
+        # Chip stack (bet display)
+        if self.bet_chips and self.bet_chips.amount > 0:
+            self.bet_chips.draw(surface)
+
+        # Hint panels
+        if self.best_play_hint:
+            self.best_play_hint.draw(surface)
+        if self.betting_hint:
+            self.betting_hint.draw(surface)
+        if self.insurance_prompt:
+            self.insurance_prompt.draw(surface)
 
         # Toasts
         if self.toast_manager:
             self.toast_manager.draw(surface)
+
+        # Particles (on top of everything except UI text)
+        self.particles.draw(surface)
 
         # State indicator
         if self.engine:
@@ -631,7 +1010,8 @@ class GameScene(BaseScene):
         # Instructions
         font_small = pygame.font.Font(None, 24)
         crt_state = "ON" if self.crt_filter.enabled else "OFF"
-        instructions = f"C: CRT ({crt_state}) | ESC: Menu"
+        hint_state = "ON" if self.show_hints else "OFF"
+        instructions = f"B: Hints ({hint_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
         rendered = font_small.render(instructions, True, COLORS.TEXT_MUTED)
         rect = rendered.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 20))
         surface.blit(rendered, rect)

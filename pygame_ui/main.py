@@ -6,9 +6,16 @@ import pygame
 
 from pygame_ui.config import DIMENSIONS
 from pygame_ui.core.scene_manager import SceneManager
+from pygame_ui.core.stats_manager import get_stats_manager
 from pygame_ui.scenes.title_scene import TitleScene
 from pygame_ui.scenes.game_scene import GameScene
 from pygame_ui.scenes.settings_scene import SettingsScene
+from pygame_ui.scenes.strategy_chart_scene import StrategyChartScene
+from pygame_ui.scenes.drill_menu_scene import DrillMenuScene
+from pygame_ui.scenes.counting_drill_scene import CountingDrillScene
+from pygame_ui.scenes.strategy_drill_scene import StrategyDrillScene
+from pygame_ui.scenes.speed_drill_scene import SpeedDrillScene
+from pygame_ui.scenes.performance_scene import PerformanceScene
 from pygame_ui.core.sound_generator import generate_all_sounds
 import os
 
@@ -37,6 +44,15 @@ class Application:
         self.scene_manager.register("title", TitleScene())
         self.scene_manager.register("game", GameScene())
         self.scene_manager.register("settings", SettingsScene())
+        self.scene_manager.register("strategy_chart", StrategyChartScene())
+        self.scene_manager.register("drill_menu", DrillMenuScene())
+        self.scene_manager.register("counting_drill", CountingDrillScene())
+        self.scene_manager.register("strategy_drill", StrategyDrillScene())
+        self.scene_manager.register("speed_drill", SpeedDrillScene())
+        self.scene_manager.register("performance", PerformanceScene())
+
+        # Mark session start
+        get_stats_manager().start_session()
 
         # Start with title scene
         self.scene_manager.change_to("title", transition=False)

@@ -9,6 +9,7 @@ import pygame
 from pygame_ui.config import ANIMATION, COLORS, DIMENSIONS
 from pygame_ui.core.animation import EaseType, TweenManager
 from pygame_ui.utils.math_utils import clamp, lerp
+from pygame_ui.components.pixel_card import get_card_renderer
 
 
 class CardState(Enum):
@@ -152,91 +153,18 @@ class CardSprite:
         return self.tween_manager.is_animating or len(self.animation_queue) > 0
 
     def _render_card_face(self, width: int, height: int) -> pygame.Surface:
-        """Render the face-up side of the card."""
-        surface = pygame.Surface((width, height), pygame.SRCALPHA)
-
-        # Card background
-        rect = pygame.Rect(0, 0, width, height)
-        pygame.draw.rect(surface, COLORS.CARD_WHITE, rect, border_radius=8)
-        pygame.draw.rect(surface, COLORS.CARD_BLACK, rect, width=2, border_radius=8)
-
-        # Draw card value and suit if available
-        if self.card_value and self.card_suit:
-            is_red = self.card_suit in ("hearts", "diamonds")
-            color = COLORS.CARD_RED if is_red else COLORS.CARD_BLACK
-
-            # Suit symbols
-            suit_symbols = {
-                "hearts": "♥",
-                "diamonds": "♦",
-                "clubs": "♣",
-                "spades": "♠",
-            }
-            suit_symbol = suit_symbols.get(self.card_suit, "?")
-
-            # Render value in corner
-            font_size = max(16, int(height * 0.18))
-            font = pygame.font.Font(None, font_size)
-
-            value_text = font.render(self.card_value, True, color)
-            surface.blit(value_text, (8, 6))
-
-            suit_text = font.render(suit_symbol, True, color)
-            surface.blit(suit_text, (8, 6 + font_size - 6))
-
-            # Large center suit
-            center_font = pygame.font.Font(None, int(height * 0.45))
-            center_suit = center_font.render(suit_symbol, True, color)
-            center_rect = center_suit.get_rect(center=(width // 2, height // 2))
-            surface.blit(center_suit, center_rect)
-
-            # Bottom right (inverted)
-            value_text_br = font.render(self.card_value, True, color)
-            value_text_br = pygame.transform.rotate(value_text_br, 180)
-            surface.blit(value_text_br, (width - 8 - value_text_br.get_width(), height - 6 - font_size))
-
-            suit_text_br = font.render(suit_symbol, True, color)
-            suit_text_br = pygame.transform.rotate(suit_text_br, 180)
-            surface.blit(suit_text_br, (width - 8 - suit_text_br.get_width(), height - 6 - font_size * 2 + 6))
-        else:
-            # Placeholder face - simple design
-            inner_rect = rect.inflate(-16, -16)
-            pygame.draw.rect(surface, (220, 220, 215), inner_rect, border_radius=4)
-
-        return surface
+        """Render the face-up side of the card using pixel art renderer."""
+        renderer = get_card_renderer()
+        return renderer.get_card_surface(
+            value=self.card_value,
+            suit=self.card_suit,
+            face_up=True,
+        )
 
     def _render_card_back(self, width: int, height: int) -> pygame.Surface:
-        """Render the face-down (back) side of the card."""
-        surface = pygame.Surface((width, height), pygame.SRCALPHA)
-
-        # Card background
-        rect = pygame.Rect(0, 0, width, height)
-        pygame.draw.rect(surface, COLORS.CARD_BACK, rect, border_radius=8)
-        pygame.draw.rect(surface, COLORS.CARD_BLACK, rect, width=2, border_radius=8)
-
-        # Inner pattern
-        inner_rect = rect.inflate(-12, -12)
-        pygame.draw.rect(surface, COLORS.CARD_BACK_PATTERN, inner_rect, border_radius=4)
-
-        # Decorative pattern (diamond grid)
-        pattern_color = (*COLORS.CARD_BACK[:3], 60)
-        for i in range(-height, width + height, 16):
-            pygame.draw.line(
-                surface,
-                pattern_color,
-                (i, 6),
-                (i + height, height - 6),
-                1,
-            )
-            pygame.draw.line(
-                surface,
-                pattern_color,
-                (i + height, 6),
-                (i, height - 6),
-                1,
-            )
-
-        return surface
+        """Render the face-down (back) side of the card using pixel art renderer."""
+        renderer = get_card_renderer()
+        return renderer.get_card_surface(face_up=False)
 
     def _render_card(self) -> pygame.Surface:
         """Render the card at current flip progress."""
