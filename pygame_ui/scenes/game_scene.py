@@ -157,10 +157,10 @@ class GameScene(BaseScene):
             label="RUNNING",
         )
 
-        # True count display
+        # True count display (positioned with more spacing from running count)
         self.true_count_display = CountDisplay(
             x=DIMENSIONS.SCREEN_WIDTH - 100,
-            y=130,
+            y=140,  # Increased from 130 for better spacing
             initial_value=0,
             font_size=36,
             label="TRUE",
@@ -256,10 +256,10 @@ class GameScene(BaseScene):
 
         self.buttons = [hit_button, stand_button, double_button, split_button, surrender_button]
 
-        # Bet/Deal button
+        # Bet/Deal button (positioned below betting hint)
         self.bet_button = Button(
             x=DIMENSIONS.CENTER_X,
-            y=DIMENSIONS.SCREEN_HEIGHT // 2,
+            y=DIMENSIONS.CENTER_Y + 50,  # Moved lower to avoid overlap with betting hint
             text=f"DEAL (${self.current_bet})",
             font_size=36,
             on_click=self._on_deal,
@@ -269,10 +269,10 @@ class GameScene(BaseScene):
             height=60,
         )
 
-        # Insurance buttons
+        # Insurance buttons (positioned below insurance prompt)
         insurance_yes = Button(
             x=DIMENSIONS.CENTER_X - 100,
-            y=DIMENSIONS.CENTER_Y + 30,
+            y=DIMENSIONS.CENTER_Y + 50,  # Moved lower to avoid overlap with prompt
             text="INSURANCE",
             font_size=28,
             on_click=self._on_take_insurance,
@@ -283,7 +283,7 @@ class GameScene(BaseScene):
         )
         insurance_no = Button(
             x=DIMENSIONS.CENTER_X + 100,
-            y=DIMENSIONS.CENTER_Y + 30,
+            y=DIMENSIONS.CENTER_Y + 50,  # Moved lower to avoid overlap with prompt
             text="NO INSURANCE",
             font_size=28,
             on_click=self._on_decline_insurance,
@@ -303,17 +303,17 @@ class GameScene(BaseScene):
             width=200,
         )
 
-        # Betting hint (center during betting)
+        # Betting hint (center during betting, positioned above bet button)
         self.betting_hint = BettingHint(
             x=DIMENSIONS.CENTER_X,
-            y=DIMENSIONS.CENTER_Y - 80,
+            y=DIMENSIONS.CENTER_Y - 140,  # Moved higher to avoid overlap with bet button
             width=180,
         )
 
-        # Insurance prompt (center)
+        # Insurance prompt (positioned above insurance buttons)
         self.insurance_prompt = InsurancePrompt(
             x=DIMENSIONS.CENTER_X,
-            y=DIMENSIONS.CENTER_Y - 50,
+            y=DIMENSIONS.CENTER_Y - 80,  # Moved higher to avoid overlap with buttons
         )
 
     def _update_hints(self) -> None:
@@ -764,6 +764,41 @@ class GameScene(BaseScene):
                 self.insurance_prompt.hide()
             self._update_button_states()
 
+    # Bet amount presets
+    BET_AMOUNTS = [10, 25, 50, 100, 200, 500]
+
+    def _adjust_bet(self, direction: int) -> None:
+        """Adjust bet amount up/down through preset values.
+
+        Args:
+            direction: 1 to increase bet, -1 to decrease bet
+        """
+        try:
+            current_index = self.BET_AMOUNTS.index(self.current_bet)
+        except ValueError:
+            # Current bet not in presets, find nearest
+            current_index = 3  # Default to 100
+
+        new_index = max(0, min(len(self.BET_AMOUNTS) - 1, current_index + direction))
+        self.current_bet = self.BET_AMOUNTS[new_index]
+
+        # Update bet button text
+        if self.bet_button:
+            self.bet_button.text = f"DEAL (${self.current_bet})"
+            self.bet_button._needs_redraw = True
+
+        play_sound("button_click")
+
+        # Show toast for feedback
+        if self.toast_manager:
+            self.toast_manager.spawn(
+                f"Bet: ${self.current_bet}",
+                DIMENSIONS.CENTER_X,
+                DIMENSIONS.CENTER_Y + 120,
+                ToastType.INFO,
+                duration=0.5,
+            )
+
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle input events."""
         mouse_pos = pygame.mouse.get_pos()
@@ -841,6 +876,15 @@ class GameScene(BaseScene):
                 return True
             elif event.key == pygame.K_ESCAPE:
                 self.change_scene("title", transition=True)
+                return True
+            # Bet adjustment during WAITING_FOR_BET
+            elif event.key in (pygame.K_UP, pygame.K_EQUALS, pygame.K_PLUS):
+                if self.engine and self.engine.state == GameState.WAITING_FOR_BET:
+                    self._adjust_bet(1)
+                return True
+            elif event.key in (pygame.K_DOWN, pygame.K_MINUS):
+                if self.engine and self.engine.state == GameState.WAITING_FOR_BET:
+                    self._adjust_bet(-1)
                 return True
 
         elif event.type == pygame.MOUSEMOTION:
@@ -939,12 +983,26 @@ class GameScene(BaseScene):
         dealer_rect = dealer_label.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 90))
         surface.blit(dealer_label, dealer_rect)
 
-        # Show dealer hand value when revealed
-        if self.engine and self.engine.state not in (GameState.WAITING_FOR_BET, GameState.PLAYER_TURN, GameState.DEALING):
+        # Show dealer hand value
+        if self.engine:
             snapshot = self.engine.get_snapshot()
-            value_text = font.render(f"({snapshot.dealer_hand_value})", True, COLORS.TEXT_WHITE)
-            value_rect = value_text.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 60))
-            surface.blit(value_text, value_rect)
+            # During PLAYER_TURN, show partial dealer value (upcard + ?)
+            if self.engine.state == GameState.PLAYER_TURN and snapshot.dealer_hand:
+                upcard = snapshot.dealer_hand[0]
+                if upcard.value == "A":
+                    upcard_val = 11
+                elif upcard.value in ("K", "Q", "J"):
+                    upcard_val = 10
+                else:
+                    upcard_val = int(upcard.value)
+                value_text = font.render(f"({upcard_val} + ?)", True, COLORS.TEXT_MUTED)
+                value_rect = value_text.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 60))
+                surface.blit(value_text, value_rect)
+            # After dealer reveals, show full value
+            elif self.engine.state not in (GameState.WAITING_FOR_BET, GameState.DEALING):
+                value_text = font.render(f"({snapshot.dealer_hand_value})", True, COLORS.TEXT_WHITE)
+                value_rect = value_text.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 60))
+                surface.blit(value_text, value_rect)
 
         player_label = font.render("PLAYER", True, COLORS.GOLD)
         player_rect = player_label.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.PLAYER_HAND_Y + 90))
@@ -1007,11 +1065,17 @@ class GameScene(BaseScene):
             state_rect = state_rendered.get_rect(center=(DIMENSIONS.CENTER_X, 30))
             surface.blit(state_rendered, state_rect)
 
-        # Instructions
+        # Instructions (contextual based on game state)
         font_small = pygame.font.Font(None, 24)
         crt_state = "ON" if self.crt_filter.enabled else "OFF"
         hint_state = "ON" if self.show_hints else "OFF"
-        instructions = f"B: Hints ({hint_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
+
+        # Show bet adjustment hint during betting phase
+        if self.engine and self.engine.state == GameState.WAITING_FOR_BET:
+            instructions = f"↑↓: Bet | B: Hints ({hint_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
+        else:
+            instructions = f"B: Hints ({hint_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
+
         rendered = font_small.render(instructions, True, COLORS.TEXT_MUTED)
         rect = rendered.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 20))
         surface.blit(rendered, rect)
