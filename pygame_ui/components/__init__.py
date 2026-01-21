@@ -13,6 +13,7 @@ from pygame_ui.components.strategy_chart import (
     StrategyChartTabs,
     StrategyChartLegend,
 )
+from pygame_ui.components.remaining_cards import RemainingCardsDisplay
 
 __all__ = [
     "CardSprite",
@@ -40,4 +41,5 @@ __all__ = [
     "StrategyChartGrid",
     "StrategyChartTabs",
     "StrategyChartLegend",
+    "RemainingCardsDisplay",
 ]

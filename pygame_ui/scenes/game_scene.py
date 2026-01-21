@@ -12,6 +12,7 @@ from pygame_ui.core.animation import EaseType
 from pygame_ui.core.engine_adapter import EngineAdapter, UICardInfo
 from pygame_ui.core.particles import get_particle_system
 from pygame_ui.core.sound_manager import play_sound, get_sound_manager
+from pygame_ui.core.stats_manager import get_stats_manager
 from pygame_ui.components.card import CardSprite, CardGroup
 from pygame_ui.components.counter import CountDisplay, BankrollDisplay
 from pygame_ui.components.toast import ToastManager, ToastType
@@ -19,6 +20,7 @@ from pygame_ui.components.panel import InfoPanel
 from pygame_ui.components.button import ActionButton, Button
 from pygame_ui.components.chip import ChipStack
 from pygame_ui.components.hint_panel import BestPlayHint, BettingHint, InsurancePrompt
+from pygame_ui.components.remaining_cards import RemainingCardsDisplay
 
 from core.strategy.basic import BasicStrategy, Action
 from core.strategy.deviations import find_deviation, ILLUSTRIOUS_18, FAB_4
@@ -68,6 +70,9 @@ class GameScene(BaseScene):
         # Current bet amount
         self.current_bet = 100
 
+        # Bet adjustment buttons
+        self.bet_adjust_buttons: List[Button] = []
+
         # Chip stack for bet display
         self.bet_chips: Optional[ChipStack] = None
 
@@ -87,8 +92,16 @@ class GameScene(BaseScene):
         self.insurance_prompt: Optional[InsurancePrompt] = None
         self.show_hints = True  # Toggle with B key
 
+        # Remaining cards display
+        self.remaining_cards_display: Optional[RemainingCardsDisplay] = None
+        self.show_remaining_cards = False  # Toggle with T key
+
         # Strategy for lookups
         self.basic_strategy = BasicStrategy()
+
+        # Track hand state for stats
+        self._current_hand_doubled = False
+        self._insurance_taken = False
 
     def on_enter(self) -> None:
         """Initialize the game scene."""
@@ -269,6 +282,31 @@ class GameScene(BaseScene):
             height=60,
         )
 
+        # Bet adjustment buttons (+/- on either side of DEAL button)
+        bet_minus = Button(
+            x=DIMENSIONS.CENTER_X - 140,  # Left of DEAL button
+            y=DIMENSIONS.CENTER_Y + 50,
+            text="-",
+            font_size=32,
+            on_click=lambda: self._adjust_bet(-1),
+            bg_color=(80, 60, 60),
+            hover_color=(110, 80, 80),
+            width=50,
+            height=50,
+        )
+        bet_plus = Button(
+            x=DIMENSIONS.CENTER_X + 140,  # Right of DEAL button
+            y=DIMENSIONS.CENTER_Y + 50,
+            text="+",
+            font_size=32,
+            on_click=lambda: self._adjust_bet(1),
+            bg_color=(60, 80, 60),
+            hover_color=(80, 110, 80),
+            width=50,
+            height=50,
+        )
+        self.bet_adjust_buttons = [bet_minus, bet_plus]
+
         # Insurance buttons (positioned below insurance prompt)
         insurance_yes = Button(
             x=DIMENSIONS.CENTER_X - 100,
@@ -314,6 +352,12 @@ class GameScene(BaseScene):
         self.insurance_prompt = InsurancePrompt(
             x=DIMENSIONS.CENTER_X,
             y=DIMENSIONS.CENTER_Y - 80,  # Moved higher to avoid overlap with buttons
+        )
+
+        # Remaining cards display (bottom-left corner)
+        self.remaining_cards_display = RemainingCardsDisplay(
+            x=20,
+            y=DIMENSIONS.SCREEN_HEIGHT - 130,
         )
 
     def _update_hints(self) -> None:
@@ -463,6 +507,15 @@ class GameScene(BaseScene):
                 ("Cards:", str(self.engine.cards_remaining)),
                 ("Decks:", f"{self.engine.decks_remaining:.1f}"),
             ])
+        # Also update remaining cards display if visible
+        if self.show_remaining_cards:
+            self._update_remaining_cards_display()
+
+    def _update_remaining_cards_display(self) -> None:
+        """Update the remaining cards display from shoe."""
+        if self.remaining_cards_display and self.engine and self.engine.game:
+            shoe_cards = list(self.engine.game.shoe)
+            self.remaining_cards_display.update_from_shoe(shoe_cards)
 
     def _update_button_states(self) -> None:
         """Update button enabled states based on game state."""
@@ -493,6 +546,10 @@ class GameScene(BaseScene):
 
         if self.bet_button:
             self.bet_button.set_enabled(show_bet_button)
+
+        # Bet adjustment buttons (enabled during betting phase)
+        for button in self.bet_adjust_buttons:
+            button.set_enabled(show_bet_button)
 
         # Insurance buttons
         show_insurance = snapshot.offering_insurance
@@ -625,6 +682,43 @@ class GameScene(BaseScene):
                 self.screen_shake.add_trauma(0.3)
                 play_sound("bust")
 
+        # Record stats
+        stats = get_stats_manager()
+        if result == "win":
+            stats.record_hand_result(
+                won=True,
+                is_double=self._current_hand_doubled,
+                amount=amount,
+            )
+        elif result == "blackjack":
+            stats.record_hand_result(
+                won=True,
+                is_blackjack=True,
+                amount=amount,
+            )
+        elif result == "lose":
+            stats.record_hand_result(
+                won=False,
+                is_double=self._current_hand_doubled,
+                amount=amount,
+            )
+        elif result == "push":
+            stats.record_hand_result(
+                won=False,
+                pushed=True,
+                amount=0,
+            )
+        elif result == "bust":
+            stats.record_hand_result(
+                won=False,
+                is_bust=True,
+                is_double=self._current_hand_doubled,
+                amount=amount,
+            )
+
+        # Reset hand state flags
+        self._current_hand_doubled = False
+
         # Update bankroll display
         if self.bankroll_display and self.engine:
             self.bankroll_display.set_value(self.engine.bankroll)
@@ -697,6 +791,10 @@ class GameScene(BaseScene):
         self._pending_cards.clear()
         self._animation_time = 0.0
 
+        # Reset hand state flags
+        self._current_hand_doubled = False
+        self._insurance_taken = False
+
         # Place bet
         if self.engine.place_bet(self.current_bet):
             # Update chip stack to show bet
@@ -727,6 +825,8 @@ class GameScene(BaseScene):
             if self.bet_chips:
                 self.bet_chips.amount = self.bet_chips.amount + self.current_bet
             play_sound("chip_stack")
+            # Track that this hand was doubled for stats
+            self._current_hand_doubled = True
             self.engine.double_down()
             self._update_button_states()
 
@@ -735,6 +835,8 @@ class GameScene(BaseScene):
         if self.engine:
             play_sound("button_click")
             play_sound("chip_stack")
+            # Record split for stats
+            get_stats_manager().record_split()
             self.engine.split()
             self._update_button_states()
 
@@ -742,6 +844,12 @@ class GameScene(BaseScene):
         """Player surrenders."""
         if self.engine:
             play_sound("button_click")
+            # Record surrender for stats (returns half bet)
+            get_stats_manager().record_hand_result(
+                won=False,
+                is_surrender=True,
+                amount=-self.current_bet / 2,
+            )
             self.engine.surrender()
             self._update_button_states()
 
@@ -750,6 +858,8 @@ class GameScene(BaseScene):
         if self.engine:
             play_sound("button_click")
             play_sound("chip_stack")
+            # Track that insurance was taken
+            self._insurance_taken = True
             self.engine.take_insurance()
             if self.insurance_prompt:
                 self.insurance_prompt.hide()
@@ -808,6 +918,11 @@ class GameScene(BaseScene):
             if self.bet_button.handle_event(event):
                 return True
 
+        # Handle bet adjustment buttons
+        for button in self.bet_adjust_buttons:
+            if button.enabled and button.handle_event(event):
+                return True
+
         # Handle action buttons
         for button in self.buttons:
             if button.enabled and button.handle_event(event):
@@ -864,6 +979,24 @@ class GameScene(BaseScene):
                 if self.toast_manager:
                     self.toast_manager.spawn(
                         f"CRT: {state}",
+                        DIMENSIONS.CENTER_X,
+                        100,
+                        ToastType.INFO,
+                        duration=1.0,
+                    )
+                return True
+            elif event.key == pygame.K_t:
+                self.show_remaining_cards = not self.show_remaining_cards
+                if self.remaining_cards_display:
+                    if self.show_remaining_cards:
+                        self._update_remaining_cards_display()
+                        self.remaining_cards_display.show()
+                    else:
+                        self.remaining_cards_display.hide()
+                state = "ON" if self.show_remaining_cards else "OFF"
+                if self.toast_manager:
+                    self.toast_manager.spawn(
+                        f"Cards: {state}",
                         DIMENSIONS.CENTER_X,
                         100,
                         ToastType.INFO,
@@ -929,6 +1062,8 @@ class GameScene(BaseScene):
             button.update(dt)
         if self.bet_button:
             self.bet_button.update(dt)
+        for button in self.bet_adjust_buttons:
+            button.update(dt)
         for button in self.insurance_buttons:
             button.update(dt)
 
@@ -943,6 +1078,8 @@ class GameScene(BaseScene):
             self.betting_hint.update(dt)
         if self.insurance_prompt:
             self.insurance_prompt.update(dt)
+        if self.remaining_cards_display:
+            self.remaining_cards_display.update(dt)
 
         # Update chip stack
         if self.bet_chips:
@@ -971,6 +1108,10 @@ class GameScene(BaseScene):
         if self.deck_panel:
             self.deck_panel.draw(surface)
 
+        # Remaining cards display
+        if self.remaining_cards_display:
+            self.remaining_cards_display.draw(surface)
+
         # Hands
         self.dealer_hand.draw(surface)
         for hand in self.player_hands:
@@ -983,23 +1124,11 @@ class GameScene(BaseScene):
         dealer_rect = dealer_label.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 90))
         surface.blit(dealer_label, dealer_rect)
 
-        # Show dealer hand value
+        # Show dealer hand value (only after dealer reveals)
         if self.engine:
             snapshot = self.engine.get_snapshot()
-            # During PLAYER_TURN, show partial dealer value (upcard + ?)
-            if self.engine.state == GameState.PLAYER_TURN and snapshot.dealer_hand:
-                upcard = snapshot.dealer_hand[0]
-                if upcard.value == "A":
-                    upcard_val = 11
-                elif upcard.value in ("K", "Q", "J"):
-                    upcard_val = 10
-                else:
-                    upcard_val = int(upcard.value)
-                value_text = font.render(f"({upcard_val} + ?)", True, COLORS.TEXT_MUTED)
-                value_rect = value_text.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 60))
-                surface.blit(value_text, value_rect)
-            # After dealer reveals, show full value
-            elif self.engine.state not in (GameState.WAITING_FOR_BET, GameState.DEALING):
+            # Only show dealer value after dealer turn starts (hole card revealed)
+            if self.engine.state in (GameState.DEALER_TURN, GameState.RESOLVING, GameState.ROUND_COMPLETE):
                 value_text = font.render(f"({snapshot.dealer_hand_value})", True, COLORS.TEXT_WHITE)
                 value_rect = value_text.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.DEALER_HAND_Y - 60))
                 surface.blit(value_text, value_rect)
@@ -1031,6 +1160,9 @@ class GameScene(BaseScene):
             if snapshot.state == GameState.WAITING_FOR_BET:
                 if self.bet_button:
                     self.bet_button.draw(surface)
+                # Draw bet adjustment buttons
+                for button in self.bet_adjust_buttons:
+                    button.draw(surface)
             elif snapshot.offering_insurance:
                 for button in self.insurance_buttons:
                     button.draw(surface)
@@ -1069,12 +1201,13 @@ class GameScene(BaseScene):
         font_small = pygame.font.Font(None, 24)
         crt_state = "ON" if self.crt_filter.enabled else "OFF"
         hint_state = "ON" if self.show_hints else "OFF"
+        cards_state = "ON" if self.show_remaining_cards else "OFF"
 
         # Show bet adjustment hint during betting phase
         if self.engine and self.engine.state == GameState.WAITING_FOR_BET:
-            instructions = f"↑↓: Bet | B: Hints ({hint_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
+            instructions = f"↑↓: Bet | B: Hints ({hint_state}) | T: Cards ({cards_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
         else:
-            instructions = f"B: Hints ({hint_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
+            instructions = f"B: Hints ({hint_state}) | T: Cards ({cards_state}) | G: Strategy | C: CRT ({crt_state}) | ESC: Menu"
 
         rendered = font_small.render(instructions, True, COLORS.TEXT_MUTED)
         rect = rendered.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 20))
