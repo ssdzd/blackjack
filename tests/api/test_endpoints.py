@@ -166,3 +166,187 @@ async def test_strategy_drill(client):
     assert "dealer_upcard" in data
     assert "correct_action" in data
     assert len(data["player_cards"]) == 2
+
+
+# Session stats endpoint tests
+
+@pytest.mark.asyncio
+async def test_session_stats_returns_zeros_initially(client):
+    """Test that session stats returns zeros for a new session."""
+    # Create a new game/session
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    # Get session stats
+    response = await client.get(
+        "/api/stats/session",
+        headers={"X-Session-ID": session_id},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["hands_played"] == 0
+    assert data["win_rate"] == 0.0
+    assert data["total_wagered"] == 0.0
+    assert data["net_result"] == 0.0
+    assert data["counting_accuracy"] is None
+    assert data["strategy_accuracy"] is None
+
+
+@pytest.mark.asyncio
+async def test_session_stats_after_recording(client):
+    """Test session stats reflect recorded data."""
+    # Create a new game/session
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    # Record some stats
+    await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "hand_win", "value": 100},
+    )
+    await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "hand_loss", "value": 100},
+    )
+
+    # Get session stats
+    response = await client.get(
+        "/api/stats/session",
+        headers={"X-Session-ID": session_id},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["hands_played"] == 2
+    assert data["win_rate"] == 0.5  # 1 win / 2 hands
+    assert data["total_wagered"] == 200.0
+
+
+@pytest.mark.asyncio
+async def test_performance_stats_record_hand_win(client):
+    """Test recording a hand win updates performance stats."""
+    # Create a new game/session
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    # Record a win
+    response = await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "hand_win", "value": 50},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["hands_played"] == 1
+    assert data["wins"] == 1
+    assert data["total_wagered"] == 50.0
+    assert data["net_result"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_performance_stats_record_hand_loss(client):
+    """Test recording a hand loss updates performance stats."""
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    response = await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "hand_loss", "value": 75},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["hands_played"] == 1
+    assert data["losses"] == 1
+    assert data["total_wagered"] == 75.0
+    assert data["net_result"] == -75.0
+
+
+@pytest.mark.asyncio
+async def test_performance_stats_record_blackjack(client):
+    """Test recording a blackjack win updates performance stats."""
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    response = await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "hand_blackjack", "value": 100},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["hands_played"] == 1
+    assert data["wins"] == 1
+    assert data["blackjacks"] == 1
+    assert data["total_wagered"] == 100.0
+    assert data["net_result"] == 150.0  # 1.5x payout
+
+
+@pytest.mark.asyncio
+async def test_performance_stats_reset(client):
+    """Test resetting performance stats."""
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    # Record some stats first
+    await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "hand_win", "value": 100},
+    )
+
+    # Reset
+    response = await client.delete(f"/api/stats/performance/{session_id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["hands_played"] == 0
+    assert data["wins"] == 0
+    assert data["net_result"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_performance_stats_get(client):
+    """Test getting performance stats by session ID."""
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    # Record some data
+    await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "count_drill", "correct": True},
+    )
+    await client.post(
+        f"/api/stats/performance/{session_id}/record",
+        json={"stat_type": "count_drill", "correct": False},
+    )
+
+    # Get performance stats
+    response = await client.get(f"/api/stats/performance/{session_id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["count_drills_attempted"] == 2
+    assert data["count_drills_correct"] == 1
+
+
+@pytest.mark.asyncio
+async def test_performance_stats_history_limited(client):
+    """Test that history is limited to 100 entries."""
+    new_response = await client.post("/api/game/new")
+    session_id = new_response.json()["session_id"]
+
+    # Record more than 100 entries
+    for _ in range(105):
+        await client.post(
+            f"/api/stats/performance/{session_id}/record",
+            json={"stat_type": "hand_win", "value": 10},
+        )
+
+    # Get performance stats
+    response = await client.get(f"/api/stats/performance/{session_id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    # History should be capped at 100
+    assert len(data["history"]) == 100
