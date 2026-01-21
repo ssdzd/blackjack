@@ -213,11 +213,13 @@ function updateControls(state) {
     const bettingControls = document.getElementById('betting-controls');
     const actionControls = document.getElementById('action-controls');
     const resultControls = document.getElementById('result-controls');
+    const insuranceControls = document.getElementById('insurance-controls');
 
     // Hide all first
     bettingControls.classList.add('hidden');
     actionControls.classList.add('hidden');
     resultControls.classList.add('hidden');
+    insuranceControls?.classList.add('hidden');
 
     switch (state.state) {
         case 'WAITING_FOR_BET':
@@ -225,6 +227,12 @@ function updateControls(state) {
             // Clear any previous result
             document.getElementById('round-result').textContent = '';
             document.getElementById('round-result').className = '';
+            break;
+
+        case 'OFFERING_INSURANCE':
+            insuranceControls?.classList.remove('hidden');
+            document.getElementById('btn-take-insurance').disabled = !state.can_insure;
+            updateInsuranceHint();
             break;
 
         case 'PLAYER_TURN':
@@ -310,6 +318,39 @@ function resetGame() {
     wsClient.send('reset_game');
 }
 
+// Insurance functions
+function takeInsurance() {
+    wsClient.send('insurance', { take: true });
+}
+
+function declineInsurance() {
+    wsClient.send('insurance', { take: false });
+}
+
+function updateInsuranceHint() {
+    const hintEl = document.getElementById('insurance-hint');
+    if (!hintEl) return;
+
+    if (!betHintsEnabled) {
+        hintEl.classList.add('hidden');
+        return;
+    }
+
+    const trueCount = countTracker ? countTracker.trueCount : 0;
+    const hintAction = hintEl.querySelector('.hint-action');
+
+    // Insurance is profitable at TC +3 or higher
+    if (trueCount >= 3) {
+        hintAction.textContent = 'TAKE (TC +3+)';
+        hintAction.className = 'hint-action take-insurance';
+    } else {
+        hintAction.textContent = 'DECLINE (TC < +3)';
+        hintAction.className = 'hint-action decline-insurance';
+    }
+
+    hintEl.classList.remove('hidden');
+}
+
 // Navigation
 function setupNavigation() {
     document.getElementById('nav-play').addEventListener('click', (e) => {
@@ -325,6 +366,12 @@ function setupNavigation() {
     document.getElementById('nav-strategy-drill').addEventListener('click', (e) => {
         e.preventDefault();
         switchMode('strategy-drill');
+    });
+
+    document.getElementById('nav-performance')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchMode('performance');
+        refreshPerformanceStats();
     });
 
     document.getElementById('nav-settings')?.addEventListener('click', (e) => {
@@ -344,6 +391,7 @@ function switchMode(mode) {
     document.getElementById('game-area').classList.toggle('hidden', mode !== 'play');
     document.getElementById('count-drill-area')?.classList.toggle('hidden', mode !== 'count-drill');
     document.getElementById('strategy-drill-area')?.classList.toggle('hidden', mode !== 'strategy-drill');
+    document.getElementById('performance-area')?.classList.toggle('hidden', mode !== 'performance');
 }
 
 // Count display toggle
@@ -370,20 +418,48 @@ let currentDrill = null;
 let drillCardIndex = 0;
 let drillInterval = null;
 let drillSpeed = 1500; // ms between cards
+let speedModeEnabled = false;
+let speedDrillStartTime = null;
+let speedTimerInterval = null;
+let highScores = JSON.parse(localStorage.getItem('speedDrillHighScores') || '[]');
+
+function toggleSpeedMode() {
+    speedModeEnabled = document.getElementById('speed-mode')?.checked || false;
+    const speedInfo = document.getElementById('speed-drill-info');
+    const scoresEl = document.getElementById('speed-drill-scores');
+
+    if (speedModeEnabled) {
+        speedInfo?.classList.remove('hidden');
+        scoresEl?.classList.remove('hidden');
+        updateHighScoresDisplay();
+    } else {
+        speedInfo?.classList.add('hidden');
+        scoresEl?.classList.add('hidden');
+    }
+}
 
 async function startCountingDrill() {
     const numCards = parseInt(document.getElementById('drill-num-cards')?.value || 10);
     const system = document.getElementById('drill-system')?.value || 'hilo';
     drillSpeed = parseInt(document.getElementById('drill-speed')?.value || 1500);
 
+    // Use different endpoint for speed drill
+    const endpoint = speedModeEnabled
+        ? '/api/training/counting/speed-drill'
+        : '/api/training/counting/drill';
+
+    const body = speedModeEnabled
+        ? { num_cards: numCards, system: system, card_speed_ms: drillSpeed }
+        : { num_cards: numCards, system: system };
+
     try {
-        const response = await fetch('/api/training/counting/drill', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Session-ID': sessionId
             },
-            body: JSON.stringify({ num_cards: numCards, system: system })
+            body: JSON.stringify(body)
         });
 
         currentDrill = await response.json();
@@ -395,10 +471,41 @@ async function startCountingDrill() {
         document.getElementById('drill-result').classList.add('hidden');
         document.getElementById('btn-start-drill').disabled = true;
 
+        // Start speed timer if in speed mode
+        if (speedModeEnabled) {
+            speedDrillStartTime = Date.now();
+            startSpeedTimer();
+            updateCardProgress(0, currentDrill.cards.length);
+        }
+
         // Flash cards one by one
         drillInterval = setInterval(showNextDrillCard, drillSpeed);
     } catch (error) {
         console.error('Error starting drill:', error);
+    }
+}
+
+function startSpeedTimer() {
+    const timerDisplay = document.getElementById('speed-timer-display');
+    if (!timerDisplay) return;
+
+    speedTimerInterval = setInterval(() => {
+        const elapsed = (Date.now() - speedDrillStartTime) / 1000;
+        timerDisplay.textContent = `${elapsed.toFixed(2)}s`;
+    }, 50);
+}
+
+function stopSpeedTimer() {
+    if (speedTimerInterval) {
+        clearInterval(speedTimerInterval);
+        speedTimerInterval = null;
+    }
+}
+
+function updateCardProgress(current, total) {
+    const progressEl = document.getElementById('speed-card-progress');
+    if (progressEl) {
+        progressEl.textContent = `${current}/${total}`;
     }
 }
 
@@ -410,6 +517,11 @@ function showNextDrillCard() {
         document.getElementById('drill-input-area').classList.remove('hidden');
         document.getElementById('user-count').focus();
         document.getElementById('btn-start-drill').disabled = false;
+
+        // Update progress for speed mode
+        if (speedModeEnabled) {
+            updateCardProgress(currentDrill.cards.length, currentDrill.cards.length);
+        }
         return;
     }
 
@@ -426,80 +538,249 @@ function showNextDrillCard() {
     setTimeout(() => cardEl.classList.add('visible'), 10);
 
     drillCardIndex++;
+
+    // Update progress for speed mode
+    if (speedModeEnabled) {
+        updateCardProgress(drillCardIndex, currentDrill.cards.length);
+    }
 }
 
 async function submitCount() {
     const userCount = parseFloat(document.getElementById('user-count').value);
 
-    try {
-        const response = await fetch('/api/training/counting/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId, user_count: userCount })
-        });
+    // Stop timer for speed mode
+    stopSpeedTimer();
+    const completionTime = speedModeEnabled ? Date.now() - speedDrillStartTime : 0;
 
-        const result = await response.json();
+    // Use different endpoint for speed drill
+    if (speedModeEnabled && currentDrill.drill_id) {
+        try {
+            const response = await fetch('/api/training/counting/speed-drill/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    drill_id: currentDrill.drill_id,
+                    user_count: userCount,
+                    completion_time_ms: completionTime
+                })
+            });
 
-        const resultEl = document.getElementById('drill-result');
-        resultEl.classList.remove('hidden');
+            const result = await response.json();
 
-        if (result.correct) {
-            resultEl.innerHTML = `<span class="correct">Correct!</span> Count: ${result.actual_count}`;
-        } else {
-            resultEl.innerHTML = `<span class="incorrect">Incorrect.</span> Your answer: ${userCount}, Actual: ${result.actual_count}`;
+            const resultEl = document.getElementById('drill-result');
+            resultEl.classList.remove('hidden');
+
+            if (result.correct) {
+                resultEl.innerHTML = `
+                    <div class="speed-result-correct">
+                        <span class="correct">Correct!</span>
+                        <div class="speed-score">Score: ${result.score}</div>
+                        <div class="speed-breakdown">
+                            Base: ${result.breakdown.base} |
+                            Time Bonus: ${result.breakdown.time_bonus} |
+                            Accuracy: ${result.breakdown.accuracy}
+                        </div>
+                        <div class="speed-time">Time: ${(result.completion_time_ms / 1000).toFixed(2)}s</div>
+                    </div>`;
+
+                // Save high score
+                saveHighScore(result.score, result.completion_time_ms, currentDrill.num_cards);
+            } else {
+                resultEl.innerHTML = `
+                    <div class="speed-result-incorrect">
+                        <span class="incorrect">Incorrect.</span>
+                        <div>Your answer: ${userCount}, Actual: ${result.actual_count}</div>
+                        <div class="speed-score">Score: ${result.score}</div>
+                        <div class="speed-time">Time: ${(result.completion_time_ms / 1000).toFixed(2)}s</div>
+                    </div>`;
+            }
+
+            document.getElementById('user-count').value = '';
+        } catch (error) {
+            console.error('Error verifying speed drill:', error);
         }
+    } else {
+        // Standard counting drill
+        try {
+            const response = await fetch('/api/training/counting/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, user_count: userCount })
+            });
 
-        document.getElementById('user-count').value = '';
-    } catch (error) {
-        console.error('Error verifying count:', error);
+            const result = await response.json();
+
+            const resultEl = document.getElementById('drill-result');
+            resultEl.classList.remove('hidden');
+
+            if (result.correct) {
+                resultEl.innerHTML = `<span class="correct">Correct!</span> Count: ${result.actual_count}`;
+            } else {
+                resultEl.innerHTML = `<span class="incorrect">Incorrect.</span> Your answer: ${userCount}, Actual: ${result.actual_count}`;
+            }
+
+            document.getElementById('user-count').value = '';
+        } catch (error) {
+            console.error('Error verifying count:', error);
+        }
     }
+}
+
+function saveHighScore(score, timeMs, numCards) {
+    const entry = {
+        score: score,
+        time_ms: timeMs,
+        num_cards: numCards,
+        date: new Date().toISOString()
+    };
+
+    highScores.push(entry);
+    // Keep top 10 scores
+    highScores.sort((a, b) => b.score - a.score);
+    highScores = highScores.slice(0, 10);
+
+    localStorage.setItem('speedDrillHighScores', JSON.stringify(highScores));
+    updateHighScoresDisplay();
+}
+
+function updateHighScoresDisplay() {
+    const listEl = document.getElementById('high-scores-list');
+    if (!listEl) return;
+
+    if (highScores.length === 0) {
+        listEl.innerHTML = '<p class="no-scores">No scores yet. Complete a speed drill!</p>';
+        return;
+    }
+
+    listEl.innerHTML = highScores.slice(0, 5).map((s, i) => `
+        <div class="high-score-entry">
+            <span class="rank">#${i + 1}</span>
+            <span class="score">${s.score}</span>
+            <span class="details">${s.num_cards} cards | ${(s.time_ms / 1000).toFixed(1)}s</span>
+        </div>
+    `).join('');
 }
 
 // Strategy Drill Functions
 let currentStrategyDrill = null;
+let deviationFocusMode = false;
+
+function toggleDeviationSettings() {
+    const includeDeviations = document.getElementById('include-deviations')?.checked || false;
+    document.querySelector('.deviation-setting')?.classList.toggle('hidden', !includeDeviations);
+}
+
+function toggleDeviationFocus() {
+    deviationFocusMode = document.getElementById('deviation-focus-mode')?.checked || false;
+    document.querySelector('.deviation-focus-setting')?.classList.toggle('hidden', !deviationFocusMode);
+
+    // If deviation focus is on, auto-enable deviations
+    if (deviationFocusMode) {
+        document.getElementById('include-deviations').checked = true;
+        toggleDeviationSettings();
+    }
+}
 
 async function startStrategyDrill() {
     const includeDeviations = document.getElementById('include-deviations')?.checked || false;
-    const trueCount = includeDeviations ? parseFloat(document.getElementById('drill-true-count')?.value || 0) : null;
+    const deviationFocus = document.getElementById('deviation-focus-mode')?.checked || false;
 
-    try {
-        const response = await fetch('/api/training/strategy/drill', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-ID': sessionId
-            },
-            body: JSON.stringify({
-                include_deviations: includeDeviations,
-                true_count: trueCount
-            })
-        });
+    // Hide deviation explanation
+    document.getElementById('deviation-explanation')?.classList.add('hidden');
+    document.getElementById('deviation-tc-display').style.display = 'none';
 
-        currentStrategyDrill = await response.json();
+    if (deviationFocus) {
+        // Use deviation-focused drill endpoint
+        const tcMin = parseFloat(document.getElementById('tc-range-min')?.value || -5);
+        const tcMax = parseFloat(document.getElementById('tc-range-max')?.value || 10);
 
-        // Display the hand
-        const playerCardsEl = document.getElementById('strategy-player-cards');
-        playerCardsEl.innerHTML = currentStrategyDrill.player_cards.map(c => renderCard(c)).join('');
+        try {
+            const response = await fetch('/api/training/strategy/deviation-drill', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-ID': sessionId
+                },
+                body: JSON.stringify({
+                    true_count_range_min: tcMin,
+                    true_count_range_max: tcMax,
+                    include_fab4: true
+                })
+            });
 
-        const dealerCardEl = document.getElementById('strategy-dealer-card');
-        dealerCardEl.innerHTML = renderCard(currentStrategyDrill.dealer_upcard);
+            currentStrategyDrill = await response.json();
+            currentStrategyDrill.is_deviation_drill = true;
 
-        // Show hand info
-        const handInfo = document.getElementById('strategy-hand-info');
-        let info = `${currentStrategyDrill.is_soft ? 'Soft ' : ''}${currentStrategyDrill.player_value}`;
-        if (currentStrategyDrill.is_pair) info += ' (Pair)';
-        handInfo.textContent = info;
+            // Display the hand
+            renderStrategyDrillHand();
 
-        // Reset action buttons
-        document.querySelectorAll('.strategy-action-btn').forEach(btn => {
-            btn.classList.remove('correct', 'incorrect', 'selected');
-            btn.disabled = false;
-        });
+            // Show TC display
+            document.getElementById('deviation-tc-display').style.display = 'block';
+            const tcEl = document.getElementById('current-tc');
+            tcEl.textContent = `TC: ${currentStrategyDrill.true_count >= 0 ? '+' : ''}${currentStrategyDrill.true_count.toFixed(0)}`;
+            tcEl.className = `tc-display ${currentStrategyDrill.true_count >= 0 ? 'positive' : 'negative'}`;
 
-        document.getElementById('strategy-result').classList.add('hidden');
-    } catch (error) {
-        console.error('Error starting strategy drill:', error);
+        } catch (error) {
+            console.error('Error starting deviation drill:', error);
+        }
+    } else {
+        // Standard strategy drill
+        const trueCount = includeDeviations ? parseFloat(document.getElementById('drill-true-count')?.value || 0) : null;
+
+        try {
+            const response = await fetch('/api/training/strategy/drill', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-ID': sessionId
+                },
+                body: JSON.stringify({
+                    include_deviations: includeDeviations,
+                    true_count: trueCount
+                })
+            });
+
+            currentStrategyDrill = await response.json();
+            currentStrategyDrill.is_deviation_drill = false;
+
+            // Display the hand
+            renderStrategyDrillHand();
+
+            // Show TC if deviations enabled
+            if (includeDeviations && trueCount !== null) {
+                document.getElementById('deviation-tc-display').style.display = 'block';
+                const tcEl = document.getElementById('current-tc');
+                tcEl.textContent = `TC: ${trueCount >= 0 ? '+' : ''}${trueCount.toFixed(0)}`;
+                tcEl.className = `tc-display ${trueCount >= 0 ? 'positive' : 'negative'}`;
+            }
+
+        } catch (error) {
+            console.error('Error starting strategy drill:', error);
+        }
     }
+}
+
+function renderStrategyDrillHand() {
+    // Display the hand
+    const playerCardsEl = document.getElementById('strategy-player-cards');
+    playerCardsEl.innerHTML = currentStrategyDrill.player_cards.map(c => renderCard(c)).join('');
+
+    const dealerCardEl = document.getElementById('strategy-dealer-card');
+    dealerCardEl.innerHTML = renderCard(currentStrategyDrill.dealer_upcard);
+
+    // Show hand info
+    const handInfo = document.getElementById('strategy-hand-info');
+    let info = `${currentStrategyDrill.is_soft ? 'Soft ' : ''}${currentStrategyDrill.player_value}`;
+    if (currentStrategyDrill.is_pair) info += ' (Pair)';
+    handInfo.textContent = info;
+
+    // Reset action buttons
+    document.querySelectorAll('.strategy-action-btn').forEach(btn => {
+        btn.classList.remove('correct', 'incorrect', 'selected');
+        btn.disabled = false;
+    });
+
+    document.getElementById('strategy-result').classList.add('hidden');
 }
 
 function checkStrategyAction(action) {
@@ -530,8 +811,34 @@ function checkStrategyAction(action) {
         resultEl.innerHTML = `<span class="incorrect">Incorrect.</span> Correct action: ${correctAction}`;
     }
 
-    if (currentStrategyDrill.deviation) {
-        resultEl.innerHTML += `<br><small>Deviation: ${currentStrategyDrill.deviation}</small>`;
+    // Show deviation info
+    const explanationEl = document.getElementById('deviation-explanation');
+    if (currentStrategyDrill.is_deviation_drill) {
+        const drill = currentStrategyDrill;
+        const directionText = drill.direction === 'at_or_above' ? 'at or above' : 'at or below';
+        const tcNeeded = drill.direction === 'at_or_above'
+            ? `TC ${drill.index_threshold >= 0 ? '+' : ''}${drill.index_threshold}`
+            : `TC ${drill.index_threshold}`;
+
+        explanationEl.innerHTML = `
+            <div class="deviation-info">
+                <div class="deviation-name">${drill.deviation_name}</div>
+                <div class="deviation-details">
+                    <span>Basic Strategy: <strong>${drill.basic_strategy_action}</strong></span>
+                    <span>Deviation: <strong>${drill.deviation_action}</strong> ${directionText} ${tcNeeded}</span>
+                </div>
+                <div class="deviation-current-tc">
+                    Current TC: <strong>${drill.true_count >= 0 ? '+' : ''}${drill.true_count.toFixed(0)}</strong>
+                    → ${drill.true_count >= drill.index_threshold == (drill.direction === 'at_or_above') ? 'DEVIATE' : 'BASIC STRATEGY'}
+                </div>
+            </div>
+        `;
+        explanationEl.classList.remove('hidden');
+    } else if (currentStrategyDrill.deviation) {
+        explanationEl.innerHTML = `<small>Deviation: ${currentStrategyDrill.deviation}</small>`;
+        explanationEl.classList.remove('hidden');
+    } else {
+        explanationEl.classList.add('hidden');
     }
 }
 
@@ -1114,7 +1421,18 @@ document.addEventListener('keydown', (e) => {
             if (!document.getElementById('betting-controls').classList.contains('hidden')) placeBet();
             break;
         case 'n':
-            if (!document.getElementById('result-controls').classList.contains('hidden')) newRound();
+            // N = New round OR No insurance depending on state
+            if (!document.getElementById('result-controls').classList.contains('hidden')) {
+                newRound();
+            } else if (!document.getElementById('insurance-controls')?.classList.contains('hidden')) {
+                declineInsurance();
+            }
+            break;
+        case 'i':
+            // I = Take insurance
+            if (!document.getElementById('insurance-controls')?.classList.contains('hidden')) {
+                if (!document.getElementById('btn-take-insurance').disabled) takeInsurance();
+            }
             break;
     }
 });
@@ -1151,11 +1469,237 @@ window.placeBet = placeBet;
 window.playerAction = playerAction;
 window.newRound = newRound;
 window.resetGame = resetGame;
+window.takeInsurance = takeInsurance;
+window.declineInsurance = declineInsurance;
 window.startCountingDrill = startCountingDrill;
 window.submitCount = submitCount;
+window.toggleSpeedMode = toggleSpeedMode;
 window.startStrategyDrill = startStrategyDrill;
 window.checkStrategyAction = checkStrategyAction;
+window.toggleDeviationSettings = toggleDeviationSettings;
+window.toggleDeviationFocus = toggleDeviationFocus;
 window.openStrategyChart = openStrategyChart;
 window.closeStrategyChart = closeStrategyChart;
 window.toggleBestPlayHint = toggleBestPlayHint;
 window.toggleBetHints = toggleBetHints;
+window.refreshPerformanceStats = refreshPerformanceStats;
+window.resetPerformanceStats = resetPerformanceStats;
+
+// ============================================
+// PERFORMANCE TRACKING
+// ============================================
+
+async function refreshPerformanceStats() {
+    try {
+        const response = await fetch(`/api/stats/performance/${sessionId}`);
+        const stats = await response.json();
+        renderPerformanceStats(stats);
+    } catch (error) {
+        console.error('Error fetching performance stats:', error);
+    }
+}
+
+async function resetPerformanceStats() {
+    if (!confirm('Are you sure you want to reset all performance stats?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/stats/performance/${sessionId}`, {
+            method: 'DELETE'
+        });
+        const stats = await response.json();
+        renderPerformanceStats(stats);
+    } catch (error) {
+        console.error('Error resetting performance stats:', error);
+    }
+}
+
+function renderPerformanceStats(stats) {
+    // Game stats
+    document.getElementById('perf-hands-played').textContent = stats.hands_played;
+
+    const winRate = stats.hands_played > 0
+        ? ((stats.wins / stats.hands_played) * 100).toFixed(1)
+        : 0;
+    document.getElementById('perf-win-rate').textContent = `${winRate}%`;
+
+    const netResultEl = document.getElementById('perf-net-result');
+    netResultEl.textContent = `$${stats.net_result.toFixed(0)}`;
+    netResultEl.className = stats.net_result >= 0 ? 'positive' : 'negative';
+
+    document.getElementById('perf-blackjacks').textContent = stats.blackjacks;
+
+    // Drill accuracy
+    if (stats.count_drills_attempted > 0) {
+        const countAcc = ((stats.count_drills_correct / stats.count_drills_attempted) * 100).toFixed(0);
+        document.getElementById('perf-count-accuracy').textContent = `${countAcc}% (${stats.count_drills_correct}/${stats.count_drills_attempted})`;
+    } else {
+        document.getElementById('perf-count-accuracy').textContent = '-';
+    }
+
+    if (stats.strategy_drills_attempted > 0) {
+        const stratAcc = ((stats.strategy_drills_correct / stats.strategy_drills_attempted) * 100).toFixed(0);
+        document.getElementById('perf-strategy-accuracy').textContent = `${stratAcc}% (${stats.strategy_drills_correct}/${stats.strategy_drills_attempted})`;
+    } else {
+        document.getElementById('perf-strategy-accuracy').textContent = '-';
+    }
+
+    if (stats.deviation_drills_attempted > 0) {
+        const devAcc = ((stats.deviation_drills_correct / stats.deviation_drills_attempted) * 100).toFixed(0);
+        document.getElementById('perf-deviation-accuracy').textContent = `${devAcc}% (${stats.deviation_drills_correct}/${stats.deviation_drills_attempted})`;
+    } else {
+        document.getElementById('perf-deviation-accuracy').textContent = '-';
+    }
+
+    if (stats.speed_drill_best_score > 0) {
+        document.getElementById('perf-speed-best').textContent = `${stats.speed_drill_best_score} pts`;
+    } else {
+        document.getElementById('perf-speed-best').textContent = '-';
+    }
+
+    // Render charts
+    renderBankrollChart(stats.history);
+    renderDrillChart(stats);
+}
+
+function renderBankrollChart(history) {
+    const canvas = document.getElementById('bankroll-chart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = 40;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+
+    if (!history || history.length === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data yet. Play some hands to see your bankroll history!', width / 2, height / 2);
+        return;
+    }
+
+    // Filter for hand results only
+    const handHistory = history.filter(h =>
+        ['hand_win', 'hand_loss', 'hand_push', 'hand_blackjack'].includes(h.event_type)
+    );
+
+    if (handHistory.length === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.textAlign = 'center';
+        ctx.fillText('No hand history yet.', width / 2, height / 2);
+        return;
+    }
+
+    // Calculate running bankroll
+    const points = [];
+    let bankroll = 1000;
+    handHistory.forEach((h, i) => {
+        bankroll = h.bankroll + 1000; // Approximate
+        points.push({ x: i, y: bankroll });
+    });
+
+    // Find min/max
+    const minY = Math.min(...points.map(p => p.y), 0);
+    const maxY = Math.max(...points.map(p => p.y), 1000);
+    const range = maxY - minY || 1;
+
+    // Draw axes
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.moveTo(padding, padding);
+    ctx.lineTo(padding, height - padding);
+    ctx.lineTo(width - padding, height - padding);
+    ctx.stroke();
+
+    // Draw line
+    ctx.strokeStyle = points[points.length - 1].y >= 1000 ? '#28a745' : '#dc3545';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    points.forEach((p, i) => {
+        const x = padding + (p.x / (points.length - 1 || 1)) * (width - 2 * padding);
+        const y = height - padding - ((p.y - minY) / range) * (height - 2 * padding);
+
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+
+    ctx.stroke();
+
+    // Draw starting line
+    ctx.strokeStyle = 'rgba(255,215,0,0.5)';
+    ctx.setLineDash([5, 5]);
+    const startY = height - padding - ((1000 - minY) / range) * (height - 2 * padding);
+    ctx.beginPath();
+    ctx.moveTo(padding, startY);
+    ctx.lineTo(width - padding, startY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Labels
+    ctx.fillStyle = 'white';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`$${maxY.toFixed(0)}`, padding - 5, padding + 5);
+    ctx.fillText(`$${minY.toFixed(0)}`, padding - 5, height - padding);
+    ctx.textAlign = 'center';
+    ctx.fillText('Hands Played', width / 2, height - 5);
+}
+
+function renderDrillChart(stats) {
+    const canvas = document.getElementById('drill-chart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = 40;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+
+    const drills = [
+        { name: 'Count', correct: stats.count_drills_correct, total: stats.count_drills_attempted },
+        { name: 'Strategy', correct: stats.strategy_drills_correct, total: stats.strategy_drills_attempted },
+        { name: 'Deviations', correct: stats.deviation_drills_correct, total: stats.deviation_drills_attempted },
+        { name: 'Speed', correct: stats.speed_drills_correct, total: stats.speed_drills_attempted },
+    ];
+
+    const barWidth = (width - 2 * padding) / drills.length - 20;
+    const maxHeight = height - 2 * padding;
+
+    drills.forEach((drill, i) => {
+        const x = padding + 10 + i * (barWidth + 20);
+        const accuracy = drill.total > 0 ? drill.correct / drill.total : 0;
+        const barHeight = accuracy * maxHeight;
+
+        // Background bar
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(x, padding, barWidth, maxHeight);
+
+        // Accuracy bar
+        ctx.fillStyle = accuracy >= 0.8 ? '#28a745' : (accuracy >= 0.6 ? '#fd7e14' : '#dc3545');
+        ctx.fillRect(x, padding + maxHeight - barHeight, barWidth, barHeight);
+
+        // Label
+        ctx.fillStyle = 'white';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(drill.name, x + barWidth / 2, height - 5);
+
+        // Percentage
+        if (drill.total > 0) {
+            ctx.fillText(`${(accuracy * 100).toFixed(0)}%`, x + barWidth / 2, padding + maxHeight - barHeight - 5);
+        } else {
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillText('N/A', x + barWidth / 2, padding + maxHeight / 2);
+        }
+    });
+}

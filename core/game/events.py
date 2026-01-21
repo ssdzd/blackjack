@@ -31,6 +31,13 @@ class EventType(Enum):
     PLAYER_SURRENDER = auto()
     PLAYER_INSURANCE = auto()
 
+    # Insurance events
+    INSURANCE_OFFERED = auto()
+    INSURANCE_TAKEN = auto()
+    INSURANCE_DECLINED = auto()
+    INSURANCE_WINS = auto()
+    INSURANCE_LOSES = auto()
+
     # Dealer events
     DEALER_REVEALS = auto()
     DEALER_HITS = auto()

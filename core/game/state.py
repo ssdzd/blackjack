@@ -7,7 +7,7 @@ class GameState(Enum):
     """
     Game state machine states.
 
-    Flow: WAITING_FOR_BET → DEALING → PLAYER_TURN → DEALER_TURN → RESOLVING → ROUND_COMPLETE
+    Flow: WAITING_FOR_BET → DEALING → [OFFERING_INSURANCE →] PLAYER_TURN → DEALER_TURN → RESOLVING → ROUND_COMPLETE
     """
 
     # Initial/idle state
@@ -15,6 +15,9 @@ class GameState(Enum):
 
     # Cards being dealt
     DEALING = auto()
+
+    # Insurance offered when dealer shows Ace
+    OFFERING_INSURANCE = auto()
 
     # Player actions
     PLAYER_TURN = auto()
@@ -38,7 +41,8 @@ class GameState(Enum):
 # Valid state transitions
 VALID_TRANSITIONS: dict[GameState, list[GameState]] = {
     GameState.WAITING_FOR_BET: [GameState.DEALING, GameState.GAME_OVER],
-    GameState.DEALING: [GameState.PLAYER_TURN, GameState.RESOLVING],  # RESOLVING if dealer BJ
+    GameState.DEALING: [GameState.OFFERING_INSURANCE, GameState.PLAYER_TURN, GameState.RESOLVING],
+    GameState.OFFERING_INSURANCE: [GameState.PLAYER_TURN, GameState.RESOLVING],  # RESOLVING if dealer BJ after insurance
     GameState.PLAYER_TURN: [GameState.PLAYER_TURN, GameState.DEALER_TURN, GameState.RESOLVING],
     GameState.DEALER_TURN: [GameState.RESOLVING],
     GameState.RESOLVING: [GameState.ROUND_COMPLETE],

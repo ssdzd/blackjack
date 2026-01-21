@@ -56,6 +56,17 @@
                         <button id="btn-bet" onclick="placeBet()">Place Bet (B)</button>
                     </div>
 
+                    <div id="insurance-controls" class="hidden">
+                        <div id="insurance-prompt">
+                            <span class="insurance-question">Dealer showing Ace. Insurance?</span>
+                            <span id="insurance-hint" class="hidden">TC suggests: <span class="hint-action"></span></span>
+                        </div>
+                        <div class="insurance-buttons">
+                            <button id="btn-take-insurance" onclick="takeInsurance()">Take Insurance (I)</button>
+                            <button id="btn-decline-insurance" onclick="declineInsurance()">No Insurance (N)</button>
+                        </div>
+                    </div>
+
                     <div id="action-controls" class="hidden">
                         <button id="btn-hit" onclick="playerAction('hit')">Hit (H)</button>
                         <button id="btn-stand" onclick="playerAction('stand')">Stand (S)</button>
@@ -94,9 +105,26 @@
                         <label for="drill-speed">Speed (ms):</label>
                         <input type="number" id="drill-speed" value="1500" min="500" max="5000" step="100">
                     </div>
+                    <div class="setting">
+                        <label>
+                            <input type="checkbox" id="speed-mode" onchange="toggleSpeedMode()">
+                            Speed Mode
+                        </label>
+                    </div>
                 </div>
 
                 <button id="btn-start-drill" onclick="startCountingDrill()">Start Drill</button>
+
+                <!-- Speed Drill Timer Display -->
+                <div id="speed-drill-info" class="hidden">
+                    <div class="speed-timer">
+                        <span class="timer-label">Time:</span>
+                        <span id="speed-timer-display">0.00s</span>
+                    </div>
+                    <div class="speed-progress">
+                        <span id="speed-card-progress">0/0</span>
+                    </div>
+                </div>
 
                 <div id="drill-cards" class="drill-card-area"></div>
 
@@ -107,6 +135,12 @@
                 </div>
 
                 <div id="drill-result" class="hidden"></div>
+
+                <!-- Speed Drill High Scores -->
+                <div id="speed-drill-scores" class="hidden">
+                    <h3>High Scores</h3>
+                    <div id="high-scores-list"></div>
+                </div>
             </section>
 
             <!-- Strategy Drill Area -->
@@ -117,13 +151,25 @@
                 <div class="drill-settings">
                     <div class="setting">
                         <label>
-                            <input type="checkbox" id="include-deviations">
+                            <input type="checkbox" id="include-deviations" onchange="toggleDeviationSettings()">
                             Include Deviations
+                        </label>
+                    </div>
+                    <div class="setting">
+                        <label>
+                            <input type="checkbox" id="deviation-focus-mode" onchange="toggleDeviationFocus()">
+                            Deviation Focus (I18/Fab4)
                         </label>
                     </div>
                     <div class="setting deviation-setting hidden">
                         <label for="drill-true-count">True Count:</label>
                         <input type="number" id="drill-true-count" value="0" step="1" min="-10" max="10">
+                    </div>
+                    <div class="setting deviation-focus-setting hidden">
+                        <label for="tc-range-min">TC Range:</label>
+                        <input type="number" id="tc-range-min" value="-5" step="1" min="-10" max="10" style="width:50px">
+                        <span>to</span>
+                        <input type="number" id="tc-range-max" value="10" step="1" min="-10" max="10" style="width:50px">
                     </div>
                 </div>
 
@@ -140,6 +186,11 @@
                         <div id="strategy-player-cards" class="cards"></div>
                         <div id="strategy-hand-info" class="hand-value"></div>
                     </div>
+
+                    <div class="strategy-section" id="deviation-tc-display" style="display:none;">
+                        <h3>True Count</h3>
+                        <div id="current-tc" class="tc-display"></div>
+                    </div>
                 </div>
 
                 <div id="strategy-actions">
@@ -151,6 +202,68 @@
                 </div>
 
                 <div id="strategy-result" class="hidden"></div>
+                <div id="deviation-explanation" class="hidden"></div>
+            </section>
+
+            <!-- Performance Tab -->
+            <section id="performance-area" class="drill-area hidden">
+                <h2>Performance Tracking</h2>
+                <p class="drill-description">Track your progress across games and drills.</p>
+
+                <div class="performance-overview">
+                    <div class="stat-card">
+                        <h3>Game Stats</h3>
+                        <div class="stat-row">
+                            <span>Hands Played:</span>
+                            <span id="perf-hands-played">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Win Rate:</span>
+                            <span id="perf-win-rate">0%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Net Result:</span>
+                            <span id="perf-net-result">$0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Blackjacks:</span>
+                            <span id="perf-blackjacks">0</span>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3>Drill Accuracy</h3>
+                        <div class="stat-row">
+                            <span>Counting:</span>
+                            <span id="perf-count-accuracy">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Strategy:</span>
+                            <span id="perf-strategy-accuracy">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Deviations:</span>
+                            <span id="perf-deviation-accuracy">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Speed Best:</span>
+                            <span id="perf-speed-best">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-section">
+                    <h3>Bankroll Over Time</h3>
+                    <canvas id="bankroll-chart" width="600" height="200"></canvas>
+                </div>
+
+                <div class="chart-section">
+                    <h3>Drill Performance</h3>
+                    <canvas id="drill-chart" width="600" height="200"></canvas>
+                </div>
+
+                <button onclick="refreshPerformanceStats()" class="btn-small">Refresh Stats</button>
+                <button onclick="resetPerformanceStats()" class="btn-small btn-danger">Reset All Stats</button>
             </section>
 
             <!-- Stats Panel -->
@@ -190,6 +303,7 @@
                 <a href="#" id="nav-play" class="active">Play</a>
                 <a href="#" id="nav-count-drill">Count Drill</a>
                 <a href="#" id="nav-strategy-drill">Strategy Drill</a>
+                <a href="#" id="nav-performance">Performance</a>
                 <a href="#" id="nav-settings">Settings</a>
             </nav>
             <div class="keyboard-hints">

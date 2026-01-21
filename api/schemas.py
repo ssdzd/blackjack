@@ -87,6 +87,14 @@ class StrategyDrillRequest(BaseModel):
     true_count: float | None = None
 
 
+class DeviationDrillRequest(BaseModel):
+    """Request for deviation-focused drill."""
+
+    true_count_range_min: float = -5.0
+    true_count_range_max: float = 10.0
+    include_fab4: bool = True  # Include Fab 4 surrender deviations
+
+
 class StrategyDrillResponse(BaseModel):
     """Strategy drill result."""
 
@@ -97,6 +105,23 @@ class StrategyDrillResponse(BaseModel):
     dealer_upcard: CardResponse
     correct_action: str
     deviation: str | None = None
+
+
+class DeviationDrillResponse(BaseModel):
+    """Deviation drill result."""
+
+    player_cards: list[CardResponse]
+    player_value: int
+    is_soft: bool
+    is_pair: bool
+    dealer_upcard: CardResponse
+    true_count: float
+    index_threshold: float
+    basic_strategy_action: str
+    deviation_action: str
+    correct_action: str  # What player should do at this TC
+    deviation_name: str
+    direction: str  # "at_or_above" or "at_or_below"
 
 
 class CountVerifyRequest(BaseModel):
@@ -112,6 +137,45 @@ class CountVerifyResponse(BaseModel):
     correct: bool
     actual_count: float
     difference: float
+
+
+# Speed Drill schemas
+class SpeedDrillRequest(BaseModel):
+    """Request for speed drill."""
+
+    system: Literal["hilo", "ko", "omega2", "wong_halves"] = "hilo"
+    num_cards: int = Field(default=20, ge=5, le=52)
+    card_speed_ms: int = Field(default=1000, ge=250, le=3000)
+
+
+class SpeedDrillResponse(BaseModel):
+    """Speed drill result."""
+
+    drill_id: str
+    cards: list[CardResponse]
+    correct_count: float
+    system: str
+    card_speed_ms: int
+    num_cards: int
+
+
+class SpeedDrillVerifyRequest(BaseModel):
+    """Request to verify speed drill result."""
+
+    drill_id: str
+    user_count: float
+    completion_time_ms: int
+
+
+class SpeedDrillVerifyResponse(BaseModel):
+    """Speed drill verification result."""
+
+    correct: bool
+    actual_count: float
+    difference: float
+    completion_time_ms: int
+    score: int
+    breakdown: dict[str, int]  # {"base": 100, "time_bonus": 20, "accuracy": 50}
 
 
 # Statistics schemas
@@ -156,3 +220,62 @@ class SessionStatsResponse(BaseModel):
     net_result: float
     counting_accuracy: float | None
     strategy_accuracy: float | None
+
+
+# Performance Tracking schemas
+class SessionHistoryEntry(BaseModel):
+    """Single entry in session history."""
+
+    timestamp: int  # Unix timestamp in milliseconds
+    bankroll: float
+    running_count: int | None = None
+    true_count: float | None = None
+    event_type: str  # "hand_result", "drill_result", etc.
+    details: dict | None = None
+
+
+class PerformanceStats(BaseModel):
+    """Comprehensive performance statistics."""
+
+    # Game stats
+    hands_played: int = 0
+    wins: int = 0
+    losses: int = 0
+    pushes: int = 0
+    blackjacks: int = 0
+    total_wagered: float = 0.0
+    net_result: float = 0.0
+
+    # Counting drill stats
+    count_drills_attempted: int = 0
+    count_drills_correct: int = 0
+    count_average_error: float = 0.0
+
+    # Strategy drill stats
+    strategy_drills_attempted: int = 0
+    strategy_drills_correct: int = 0
+
+    # Deviation drill stats
+    deviation_drills_attempted: int = 0
+    deviation_drills_correct: int = 0
+
+    # Speed drill stats
+    speed_drills_attempted: int = 0
+    speed_drills_correct: int = 0
+    speed_drill_best_score: int = 0
+    speed_drill_best_time_ms: int | None = None
+
+    # Session history for charts
+    history: list[SessionHistoryEntry] = []
+
+
+class RecordStatRequest(BaseModel):
+    """Request to record a stat entry."""
+
+    stat_type: Literal[
+        "hand_win", "hand_loss", "hand_push", "hand_blackjack",
+        "count_drill", "strategy_drill", "deviation_drill", "speed_drill"
+    ]
+    value: float | None = None  # For wager amounts or drill scores
+    correct: bool | None = None  # For drill results
+    details: dict | None = None  # Additional context

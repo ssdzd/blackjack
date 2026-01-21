@@ -59,6 +59,11 @@ class BlackjackGame:
         {"trigger": "place_bet", "source": "waiting_for_bet", "dest": "dealing"},
         {"trigger": "deal_cards", "source": "dealing", "dest": "player_turn"},
         {"trigger": "dealer_blackjack", "source": "dealing", "dest": "resolving"},
+        # Insurance transitions
+        {"trigger": "offer_insurance", "source": "dealing", "dest": "offering_insurance"},
+        {"trigger": "insurance_decision", "source": "offering_insurance", "dest": "player_turn"},
+        {"trigger": "dealer_blackjack_after_insurance", "source": "offering_insurance", "dest": "resolving"},
+        # Normal play transitions
         {"trigger": "player_action", "source": "player_turn", "dest": "player_turn"},
         {"trigger": "player_done", "source": "player_turn", "dest": "dealer_turn"},
         {"trigger": "player_busts_all", "source": "player_turn", "dest": "resolving"},
@@ -188,6 +193,12 @@ class BlackjackGame:
 
         if player_bj:
             self.events.emit_new(EventType.PLAYER_BLACKJACK)
+
+        # Offer insurance if dealer shows Ace (before checking for dealer blackjack)
+        if dealer_showing_ace and not player_bj:
+            self.events.emit_new(EventType.INSURANCE_OFFERED)
+            self.offer_insurance()
+            return True  # Wait for insurance decision
 
         # Check dealer blackjack (peek if allowed)
         if self.rules.dealer_peeks and self._check_dealer_blackjack():
@@ -353,6 +364,80 @@ class BlackjackGame:
 
         return self._advance_to_next_hand()
 
+    def take_insurance(self, amount: int | None = None) -> bool:
+        """
+        Player takes insurance bet.
+
+        Args:
+            amount: Insurance bet amount (defaults to half the main bet)
+
+        Returns:
+            True if insurance was taken
+        """
+        if self.state != GameState.OFFERING_INSURANCE:
+            return False
+
+        hand = self.player.current_hand
+        if hand is None:
+            return False
+
+        # Insurance bet is up to half the original bet
+        max_insurance = hand.bet // 2
+        insurance_amount = amount if amount is not None else max_insurance
+
+        if insurance_amount > max_insurance:
+            self.events.emit_new(
+                EventType.INVALID_ACTION,
+                message=f"Insurance bet cannot exceed ${max_insurance}",
+            )
+            return False
+
+        if Decimal(str(insurance_amount)) > self.player.bankroll:
+            self.events.emit_new(EventType.INSUFFICIENT_FUNDS)
+            return False
+
+        self.player.insurance_bet = Decimal(str(insurance_amount))
+        self.events.emit_new(
+            EventType.INSURANCE_TAKEN,
+            amount=insurance_amount,
+        )
+
+        return self._complete_insurance_decision()
+
+    def decline_insurance(self) -> bool:
+        """Player declines insurance."""
+        if self.state != GameState.OFFERING_INSURANCE:
+            return False
+
+        self.player.insurance_bet = Decimal("0")
+        self.events.emit_new(EventType.INSURANCE_DECLINED)
+
+        return self._complete_insurance_decision()
+
+    def _complete_insurance_decision(self) -> bool:
+        """Complete the insurance decision and continue with the hand."""
+        # Check dealer blackjack after insurance decision
+        if self.rules.dealer_peeks and self._check_dealer_blackjack():
+            self.events.emit_new(EventType.DEALER_BLACKJACK)
+            # Insurance payout is handled in _resolve_round
+            self.dealer_blackjack_after_insurance()
+            return self._resolve_round()
+
+        # No dealer blackjack, continue to player turn
+        self.insurance_decision()
+        return True
+
+    @property
+    def can_insure(self) -> bool:
+        """Check if insurance is available."""
+        if self.state != GameState.OFFERING_INSURANCE:
+            return False
+        hand = self.player.current_hand
+        if hand is None:
+            return False
+        max_insurance = hand.bet // 2
+        return Decimal(str(max_insurance)) <= self.player.bankroll
+
     def _advance_to_next_hand(self) -> bool:
         """Move to the next hand or dealer turn."""
         self.player.current_hand_index += 1
@@ -405,6 +490,24 @@ class BlackjackGame:
     def _resolve_round(self) -> bool:
         """Resolve the round and pay out bets."""
         total_result = Decimal("0")
+
+        # Handle insurance payout first
+        if self.player.insurance_bet > 0:
+            if self.dealer_hand.is_blackjack:
+                # Insurance wins: pays 2:1
+                insurance_payout = self.player.insurance_bet * 2
+                total_result += insurance_payout
+                self.events.emit_new(
+                    EventType.INSURANCE_WINS,
+                    amount=float(insurance_payout),
+                )
+            else:
+                # Insurance loses
+                total_result -= self.player.insurance_bet
+                self.events.emit_new(
+                    EventType.INSURANCE_LOSES,
+                    amount=float(self.player.insurance_bet),
+                )
 
         for i, hand in enumerate(self.player.hands):
             if hand.is_surrendered:

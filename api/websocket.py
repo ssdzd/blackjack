@@ -151,6 +151,8 @@ def _game_state_to_dict(game: BlackjackGame, hide_hole_card: bool = False) -> di
         "can_double": game.can_double,
         "can_split": game.can_split,
         "can_surrender": game.can_surrender,
+        "can_insure": game.can_insure,
+        "insurance_bet": float(game.player.insurance_bet),
         "shoe_cards_remaining": game.shoe.cards_remaining,
         "shoe_decks_remaining": round(game.shoe.cards_remaining / 52, 2),
     }
@@ -158,7 +160,7 @@ def _game_state_to_dict(game: BlackjackGame, hide_hole_card: bool = False) -> di
 
 def _event_to_message(event: GameEvent, game: BlackjackGame) -> dict[str, Any]:
     """Convert a game event to a WebSocket message."""
-    hide_hole = game.state.name == "PLAYER_TURN"
+    hide_hole = game.state.name in ("PLAYER_TURN", "OFFERING_INSURANCE")
 
     base_message = {
         "type": "event",
@@ -269,6 +271,21 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": f"Cannot {action} now",
+                    })
+
+            elif msg_type == "insurance":
+                # Handle insurance decision
+                take_insurance = message.get("take", False)
+                if take_insurance:
+                    amount = message.get("amount")  # Optional, defaults to half bet
+                    success = game.take_insurance(amount)
+                else:
+                    success = game.decline_insurance()
+
+                if not success:
+                    await manager.send_message(session_id, {
+                        "type": "error",
+                        "message": "Cannot make insurance decision now",
                     })
 
             elif msg_type == "new_round":
