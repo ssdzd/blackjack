@@ -2,8 +2,9 @@
 
 import time
 from decimal import Decimal
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Header
-from typing import Annotated
 
 from api.schemas import (
     HouseEdgeRequest,
@@ -15,14 +16,88 @@ from api.schemas import (
     RecordStatRequest,
     SessionHistoryEntry,
 )
+from api.session import get_session_store
 from core.strategy.rules import RuleSet
 from core.statistics.house_edge import HouseEdgeCalculator
 from core.statistics.kelly import KellyCalculator
 
 router = APIRouter()
 
-# Performance stats storage (would use Redis/DB in production)
+# Performance stats memory cache (backed by session store)
 _performance_stats: dict[str, PerformanceStats] = {}
+
+# Session data keys
+SESSION_KEY_PERFORMANCE = "performance"
+SESSION_KEY_LAST_ACTIVITY = "last_activity"
+
+
+def _serialize_performance_stats(stats: PerformanceStats) -> dict[str, Any]:
+    """Serialize performance stats for session storage."""
+    return {
+        "hands_played": stats.hands_played,
+        "wins": stats.wins,
+        "losses": stats.losses,
+        "pushes": stats.pushes,
+        "blackjacks": stats.blackjacks,
+        "total_wagered": stats.total_wagered,
+        "net_result": stats.net_result,
+        "count_drills_attempted": stats.count_drills_attempted,
+        "count_drills_correct": stats.count_drills_correct,
+        "count_average_error": stats.count_average_error,
+        "strategy_drills_attempted": stats.strategy_drills_attempted,
+        "strategy_drills_correct": stats.strategy_drills_correct,
+        "deviation_drills_attempted": stats.deviation_drills_attempted,
+        "deviation_drills_correct": stats.deviation_drills_correct,
+        "speed_drills_attempted": stats.speed_drills_attempted,
+        "speed_drills_correct": stats.speed_drills_correct,
+        "speed_drill_best_score": stats.speed_drill_best_score,
+        "speed_drill_best_time_ms": stats.speed_drill_best_time_ms,
+        "history": [h.model_dump() for h in stats.history],
+    }
+
+
+def _deserialize_performance_stats(data: dict[str, Any]) -> PerformanceStats:
+    """Deserialize performance stats from session storage."""
+    history = [SessionHistoryEntry(**h) for h in data.get("history", [])]
+    return PerformanceStats(
+        hands_played=data.get("hands_played", 0),
+        wins=data.get("wins", 0),
+        losses=data.get("losses", 0),
+        pushes=data.get("pushes", 0),
+        blackjacks=data.get("blackjacks", 0),
+        total_wagered=data.get("total_wagered", 0.0),
+        net_result=data.get("net_result", 0.0),
+        count_drills_attempted=data.get("count_drills_attempted", 0),
+        count_drills_correct=data.get("count_drills_correct", 0),
+        count_average_error=data.get("count_average_error", 0.0),
+        strategy_drills_attempted=data.get("strategy_drills_attempted", 0),
+        strategy_drills_correct=data.get("strategy_drills_correct", 0),
+        deviation_drills_attempted=data.get("deviation_drills_attempted", 0),
+        deviation_drills_correct=data.get("deviation_drills_correct", 0),
+        speed_drills_attempted=data.get("speed_drills_attempted", 0),
+        speed_drills_correct=data.get("speed_drills_correct", 0),
+        speed_drill_best_score=data.get("speed_drill_best_score", 0),
+        speed_drill_best_time_ms=data.get("speed_drill_best_time_ms"),
+        history=history,
+    )
+
+
+async def _load_performance_stats(session_id: str) -> PerformanceStats | None:
+    """Load performance stats from session store."""
+    store = await get_session_store()
+    session_data = await store.get(session_id)
+    if session_data and SESSION_KEY_PERFORMANCE in session_data:
+        return _deserialize_performance_stats(session_data[SESSION_KEY_PERFORMANCE])
+    return None
+
+
+async def _save_performance_stats(session_id: str, stats: PerformanceStats) -> None:
+    """Save performance stats to session store."""
+    store = await get_session_store()
+    session_data = await store.get(session_id) or {}
+    session_data[SESSION_KEY_PERFORMANCE] = _serialize_performance_stats(stats)
+    session_data[SESSION_KEY_LAST_ACTIVITY] = int(time.time())
+    await store.set(session_id, session_data)
 
 
 @router.post("/house-edge")
@@ -73,30 +148,55 @@ async def calculate_kelly_bet(request: KellyBetRequest) -> KellyBetResponse:
 
 
 @router.get("/session")
-async def get_session_stats() -> SessionStatsResponse:
-    """Get session statistics (placeholder)."""
-    # This would be populated from actual session data
+async def get_session_stats(
+    session_id: Annotated[str, Header(alias="X-Session-ID")],
+) -> SessionStatsResponse:
+    """Get session statistics."""
+    stats = await _get_or_create_performance_stats(session_id)
+
+    win_rate = stats.wins / stats.hands_played if stats.hands_played > 0 else 0.0
+
+    counting_accuracy = None
+    if stats.count_drills_attempted > 0:
+        counting_accuracy = stats.count_drills_correct / stats.count_drills_attempted
+
+    strategy_accuracy = None
+    if stats.strategy_drills_attempted > 0:
+        strategy_accuracy = stats.strategy_drills_correct / stats.strategy_drills_attempted
+
     return SessionStatsResponse(
-        hands_played=0,
-        win_rate=0.0,
-        total_wagered=0.0,
-        net_result=0.0,
-        counting_accuracy=None,
-        strategy_accuracy=None,
+        hands_played=stats.hands_played,
+        win_rate=win_rate,
+        total_wagered=stats.total_wagered,
+        net_result=stats.net_result,
+        counting_accuracy=counting_accuracy,
+        strategy_accuracy=strategy_accuracy,
     )
 
 
-def _get_or_create_performance_stats(session_id: str) -> PerformanceStats:
+async def _get_or_create_performance_stats(session_id: str) -> PerformanceStats:
     """Get or create performance stats for a session."""
-    if session_id not in _performance_stats:
-        _performance_stats[session_id] = PerformanceStats()
-    return _performance_stats[session_id]
+    # Check memory cache first
+    if session_id in _performance_stats:
+        return _performance_stats[session_id]
+
+    # Try to load from session store
+    stats = await _load_performance_stats(session_id)
+    if stats is not None:
+        _performance_stats[session_id] = stats
+        return stats
+
+    # Create new stats
+    stats = PerformanceStats()
+    _performance_stats[session_id] = stats
+    await _save_performance_stats(session_id, stats)
+    return stats
 
 
 @router.get("/performance/{session_id}")
 async def get_performance_stats(session_id: str) -> PerformanceStats:
     """Get comprehensive performance statistics for a session."""
-    return _get_or_create_performance_stats(session_id)
+    return await _get_or_create_performance_stats(session_id)
 
 
 @router.post("/performance/{session_id}/record")
@@ -105,7 +205,7 @@ async def record_stat(
     request: RecordStatRequest,
 ) -> PerformanceStats:
     """Record a stat entry for a session."""
-    stats = _get_or_create_performance_stats(session_id)
+    stats = await _get_or_create_performance_stats(session_id)
     now = int(time.time() * 1000)
 
     # Update stats based on type
@@ -174,11 +274,16 @@ async def record_stat(
     if len(stats.history) > 100:
         stats.history = stats.history[-100:]
 
+    # Save to session store
+    await _save_performance_stats(session_id, stats)
+
     return stats
 
 
 @router.delete("/performance/{session_id}")
 async def reset_performance_stats(session_id: str) -> PerformanceStats:
     """Reset performance statistics for a session."""
-    _performance_stats[session_id] = PerformanceStats()
-    return _performance_stats[session_id]
+    stats = PerformanceStats()
+    _performance_stats[session_id] = stats
+    await _save_performance_stats(session_id, stats)
+    return stats

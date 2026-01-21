@@ -1,7 +1,7 @@
 """Pydantic schemas for API requests and responses."""
 
 from decimal import Decimal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 
 
@@ -21,12 +21,11 @@ class ActionRequest(BaseModel):
 class CardResponse(BaseModel):
     """Card representation."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     rank: str
     suit: str
     value: int
-
-    class Config:
-        from_attributes = True
 
 
 class HandResponse(BaseModel):
@@ -279,3 +278,63 @@ class RecordStatRequest(BaseModel):
     value: float | None = None  # For wager amounts or drill scores
     correct: bool | None = None  # For drill results
     details: dict | None = None  # Additional context
+
+
+# Game State Persistence schemas
+class CardData(BaseModel):
+    """Serialized card data."""
+
+    rank: int
+    suit: int
+
+
+class HandData(BaseModel):
+    """Serialized hand data."""
+
+    cards: list[CardData]
+    bet: int
+    is_doubled: bool = False
+    is_split_hand: bool = False
+    is_surrendered: bool = False
+
+
+class RulesData(BaseModel):
+    """Serialized rules data."""
+
+    num_decks: int = 6
+    min_bet: int = 10
+    max_bet: int = 1000
+    dealer_hits_soft_17: bool = True
+    blackjack_payout: float = 1.5
+    double_after_split: bool = True
+    double_on: Literal["any", "9-11", "10-11"] = "any"
+    resplit_aces: bool = False
+    hit_split_aces: bool = False
+    max_splits: int = 4
+    surrender: Literal["none", "early", "late"] = "late"
+    insurance_allowed: bool = True
+    dealer_peeks: bool = True
+
+
+class GameStateData(BaseModel):
+    """Serialized game state for session storage."""
+
+    state: str
+    bankroll: str
+    insurance_bet: str
+    current_hand_index: int
+    shoe_cards: list[CardData]
+    shoe_num_decks: int
+    shoe_penetration: float
+    player_hands: list[HandData]
+    dealer_hand: HandData
+    rules: RulesData
+
+
+class SessionData(BaseModel):
+    """Complete session data structure."""
+
+    game: GameStateData | None = None
+    performance: PerformanceStats | None = None
+    created_at: int
+    last_activity: int

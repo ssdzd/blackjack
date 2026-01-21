@@ -1,8 +1,46 @@
 """Configuration management with environment variable support."""
 
 import os
+import secrets
 from dataclasses import dataclass, field
 from typing import Literal
+
+
+def _parse_cors_origins() -> list[str]:
+    """Parse CORS_ORIGINS environment variable."""
+    origins = os.getenv("CORS_ORIGINS", "http://localhost:8000")
+    return [o.strip() for o in origins.split(",") if o.strip()]
+
+
+@dataclass(frozen=True)
+class CORSConfig:
+    """CORS configuration."""
+
+    allowed_origins: list[str] = field(default_factory=_parse_cors_origins)
+    allow_credentials: bool = True
+    allow_methods: list[str] = field(default_factory=lambda: ["*"])
+    allow_headers: list[str] = field(default_factory=lambda: ["*"])
+
+
+@dataclass(frozen=True)
+class RateLimitConfig:
+    """Rate limiting configuration."""
+
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    )
+    requests_per_minute: int = field(
+        default_factory=lambda: int(os.getenv("RATE_LIMIT_RPM", "60"))
+    )
+
+
+@dataclass(frozen=True)
+class SecurityConfig:
+    """Security configuration."""
+
+    secret_key: str = field(
+        default_factory=lambda: os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
+    )
 
 
 @dataclass(frozen=True)
@@ -48,6 +86,9 @@ class AppConfig:
 
     redis: RedisConfig = field(default_factory=RedisConfig)
     game: GameConfig = field(default_factory=GameConfig)
+    cors: CORSConfig = field(default_factory=CORSConfig)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
 
 
 # Global configuration instance

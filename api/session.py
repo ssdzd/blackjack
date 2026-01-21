@@ -13,7 +13,51 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
 
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
 from config import config
+
+
+class SessionSigner:
+    """Sign and verify session IDs using itsdangerous."""
+
+    def __init__(self, secret_key: str | None = None) -> None:
+        """Initialize the signer with a secret key."""
+        self._secret_key = secret_key or config.security.secret_key
+        self._serializer = URLSafeTimedSerializer(self._secret_key)
+
+    def sign(self, session_id: str) -> str:
+        """Create a signed token from a session ID."""
+        return self._serializer.dumps(session_id)
+
+    def unsign(self, token: str, max_age: int | None = None) -> str | None:
+        """
+        Verify and extract session_id from a signed token.
+
+        Args:
+            token: The signed token to verify
+            max_age: Maximum age in seconds (defaults to session_ttl)
+
+        Returns:
+            The session ID if valid, None otherwise
+        """
+        max_age = max_age or config.session_ttl
+        try:
+            return self._serializer.loads(token, max_age=max_age)
+        except (BadSignature, SignatureExpired):
+            return None
+
+
+# Global signer instance
+_session_signer: SessionSigner | None = None
+
+
+def get_session_signer() -> SessionSigner:
+    """Get or create the session signer."""
+    global _session_signer
+    if _session_signer is None:
+        _session_signer = SessionSigner()
+    return _session_signer
 
 
 class SessionStore(ABC):
@@ -39,9 +83,21 @@ class SessionStore(ABC):
         """Check if session exists."""
         ...
 
-    def create_session_id(self) -> str:
-        """Create a new session ID."""
-        return str(uuid4())
+    def create_session_id(self, signed: bool = True) -> str:
+        """
+        Create a new session ID.
+
+        Args:
+            signed: If True, return a signed session token
+
+        Returns:
+            A new session ID (signed or unsigned based on parameter)
+        """
+        session_id = str(uuid4())
+        if signed:
+            signer = get_session_signer()
+            return signer.sign(session_id)
+        return session_id
 
 
 class InMemorySessionStore(SessionStore):
@@ -181,3 +237,17 @@ async def delete_session(session_id: str) -> None:
     """Delete a session."""
     store = await get_session_store()
     await store.delete(session_id)
+
+
+def extract_session_id(token: str) -> str | None:
+    """
+    Extract the raw session ID from a signed token.
+
+    Args:
+        token: The signed session token
+
+    Returns:
+        The raw session ID if valid, None otherwise
+    """
+    signer = get_session_signer()
+    return signer.unsign(token)
