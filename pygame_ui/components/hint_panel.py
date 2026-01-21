@@ -190,13 +190,14 @@ class BettingHint(Panel):
         kwargs.setdefault("bg_color", (35, 38, 48))
         kwargs.setdefault("bg_alpha", 220)
         kwargs.setdefault("border_color", COLORS.SILVER)
-        super().__init__(x, y, width, 110, **kwargs)
+        super().__init__(x, y, width, 130, **kwargs)
 
         self.visible = False
         self.true_count = 0.0
         self.recommended_units = 1
         self.edge_percentage = 0.0
         self.base_bet = 100
+        self.current_bet = 100  # User's current bet amount
 
         # Animation
         self._pulse_time = 0.0
@@ -224,7 +225,9 @@ class BettingHint(Panel):
             self._detail_font = pygame.font.Font(None, 22)
         return self._detail_font
 
-    def calculate_recommendation(self, true_count: float, base_bet: int = 100) -> None:
+    def calculate_recommendation(
+        self, true_count: float, base_bet: int = 100, current_bet: int = 100
+    ) -> None:
         """Calculate betting recommendation based on true count.
 
         Uses a simple TC-based spread:
@@ -239,6 +242,7 @@ class BettingHint(Panel):
         """
         self.true_count = true_count
         self.base_bet = base_bet
+        self.current_bet = current_bet
 
         # Calculate units
         if true_count < 1:
@@ -317,17 +321,25 @@ class BettingHint(Panel):
         surface.blit(title_rendered, title_rect)
         y_offset += 22
 
+        # Current bet in units
+        current_units = self.current_bet // self.base_bet if self.base_bet > 0 else 1
+        current_bet_text = f"Your bet: {current_units} unit{'s' if current_units != 1 else ''}"
+        current_bet_rendered = self.detail_font.render(current_bet_text, True, COLORS.TEXT_WHITE)
+        current_bet_rect = current_bet_rendered.get_rect(centerx=int(self.center_x), top=y_offset)
+        surface.blit(current_bet_rendered, current_bet_rect)
+        y_offset += 20
+
         # Recommended units (large)
         advantage_color = self._get_advantage_color()
-        units_text = f"{self.recommended_units} UNIT{'S' if self.recommended_units != 1 else ''}"
+        units_text = f"Bet {self.recommended_units} unit{'s' if self.recommended_units != 1 else ''}"
         units_rendered = self.units_font.render(units_text, True, advantage_color)
         units_rect = units_rendered.get_rect(centerx=int(self.center_x), top=y_offset)
         surface.blit(units_rendered, units_rect)
-        y_offset += 36
+        y_offset += 34
 
         # Dollar amount
         amount = self.recommended_units * self.base_bet
-        amount_text = f"${amount:,}"
+        amount_text = f"(${amount:,})"
         amount_rendered = self.detail_font.render(amount_text, True, COLORS.TEXT_WHITE)
         amount_rect = amount_rendered.get_rect(centerx=int(self.center_x), top=y_offset)
         surface.blit(amount_rendered, amount_rect)

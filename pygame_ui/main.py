@@ -21,6 +21,8 @@ from pygame_ui.scenes.deck_estimation_scene import DeckEstimationScene
 from pygame_ui.scenes.performance_scene import PerformanceScene
 from pygame_ui.scenes.statistics_scene import StatisticsScene
 from pygame_ui.scenes.simulation_scene import SimulationScene
+from pygame_ui.scenes.history_scene import HistoryScene
+from pygame_ui.scenes.mistakes_scene import MistakesScene
 from pygame_ui.core.sound_generator import generate_all_sounds
 import os
 
@@ -60,6 +62,8 @@ class Application:
         self.scene_manager.register("performance", PerformanceScene())
         self.scene_manager.register("statistics", StatisticsScene())
         self.scene_manager.register("simulation", SimulationScene())
+        self.scene_manager.register("history", HistoryScene())
+        self.scene_manager.register("mistakes", MistakesScene())
 
         # Mark session start
         get_stats_manager().start_session()

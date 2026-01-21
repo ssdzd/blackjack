@@ -30,6 +30,11 @@ from pygame_ui.scenes.base_scene import BaseScene
 from pygame_ui.core.session_manager import get_session_manager, SessionStatus
 from pygame_ui.core.game_settings import get_settings_manager
 from pygame_ui.components.progress_bar import SessionProgressBar
+from pygame_ui.core.hand_logger import (
+    get_hand_logger,
+    Decision,
+    HandOutcome,
+)
 
 
 class GameScene(BaseScene):
@@ -109,6 +114,9 @@ class GameScene(BaseScene):
         # Session progress bar
         self.session_progress: Optional[SessionProgressBar] = None
         self._initial_bankroll = 1000
+
+        # Hand logger for history tracking
+        self._hand_logger = get_hand_logger()
 
     def on_enter(self) -> None:
         """Initialize the game scene."""
@@ -610,6 +618,14 @@ class GameScene(BaseScene):
         # Play card deal sound
         play_sound("card_deal")
 
+        # Log card for history
+        if card_info.face_up:
+            card_str = f"{card_info.value}{card_info.suit[0]}"
+            if hand_type == "dealer":
+                self._hand_logger.add_dealer_card(card_str, is_upcard=len(self.dealer_hand.cards) == 0)
+            else:
+                self._hand_logger.add_player_card(card_str)
+
         # Create card at deck position
         card = CardSprite(
             x=self.deck_position[0],
@@ -750,6 +766,26 @@ class GameScene(BaseScene):
                 snapshot.dealer_hand_value == 21
             )
             stats.record_insurance(won=dealer_has_blackjack)
+            self._hand_logger.set_insurance(taken=True, won=dealer_has_blackjack)
+
+        # End hand logging
+        if self.engine:
+            snapshot = self.engine.get_snapshot()
+            outcome_map = {
+                "win": HandOutcome.WIN,
+                "blackjack": HandOutcome.BLACKJACK,
+                "lose": HandOutcome.LOSE,
+                "push": HandOutcome.PUSH,
+                "bust": HandOutcome.BUST,
+                "surrender": HandOutcome.SURRENDER,
+            }
+            outcome = outcome_map.get(result, HandOutcome.LOSE)
+            self._hand_logger.end_hand(
+                outcome=outcome,
+                player_value=snapshot.player_hand_values[0] if snapshot.player_hand_values else 0,
+                dealer_value=snapshot.dealer_hand_value,
+                profit_loss=amount,
+            )
 
         # Reset hand state flags
         self._current_hand_doubled = False
@@ -885,6 +921,13 @@ class GameScene(BaseScene):
 
         # Place bet
         if self.engine.place_bet(self.current_bet):
+            # Start hand logging
+            self._hand_logger.start_hand(
+                initial_bet=self.current_bet,
+                running_count=self.engine.running_count,
+                true_count=self.engine.true_count,
+            )
+
             # Update chip stack to show bet
             if self.bet_chips:
                 self.bet_chips.amount = self.current_bet
@@ -894,6 +937,7 @@ class GameScene(BaseScene):
     def _on_hit(self) -> None:
         """Player hits."""
         if self.engine:
+            self._record_decision("hit")
             play_sound("button_click")
             self.engine.hit()
             self._update_button_states()
@@ -901,6 +945,7 @@ class GameScene(BaseScene):
     def _on_stand(self) -> None:
         """Player stands."""
         if self.engine:
+            self._record_decision("stand")
             play_sound("button_click")
             self.engine.stand()
             self._update_button_states()
@@ -908,6 +953,7 @@ class GameScene(BaseScene):
     def _on_double(self) -> None:
         """Player doubles down."""
         if self.engine:
+            self._record_decision("double")
             play_sound("button_click")
             # Add extra chips for double
             if self.bet_chips:
@@ -915,22 +961,26 @@ class GameScene(BaseScene):
             play_sound("chip_stack")
             # Track that this hand was doubled for stats
             self._current_hand_doubled = True
+            self._hand_logger.set_doubled(self.current_bet * 2)
             self.engine.double_down()
             self._update_button_states()
 
     def _on_split(self) -> None:
         """Player splits."""
         if self.engine:
+            self._record_decision("split")
             play_sound("button_click")
             play_sound("chip_stack")
             # Record split for stats
             get_stats_manager().record_split()
+            self._hand_logger.set_split()
             self.engine.split()
             self._update_button_states()
 
     def _on_surrender(self) -> None:
         """Player surrenders."""
         if self.engine:
+            self._record_decision("surrender")
             play_sound("button_click")
             # Record surrender for stats (returns half bet)
             get_stats_manager().record_hand_result(
@@ -941,6 +991,112 @@ class GameScene(BaseScene):
             self.engine.surrender()
             self._update_button_states()
 
+    def _record_decision(self, action: str) -> None:
+        """Record a player decision for hand history."""
+        if not self.engine:
+            return
+
+        snapshot = self.engine.get_snapshot()
+        hand_index = snapshot.current_hand_index
+        if hand_index >= len(snapshot.player_hand_values):
+            return
+
+        player_total = snapshot.player_hand_values[hand_index]
+        true_count = snapshot.true_count
+        running_count = snapshot.running_count
+
+        # Determine hand properties
+        is_soft = False
+        is_pair = False
+        pair_rank = None
+
+        if hand_index < len(snapshot.player_hands):
+            player_cards = snapshot.player_hands[hand_index]
+            if len(player_cards) >= 2:
+                # Check for pair
+                if len(player_cards) == 2:
+                    card_values = [c.value for c in player_cards]
+                    if card_values[0] == card_values[1]:
+                        is_pair = True
+                        val = card_values[0]
+                        if val == "A":
+                            pair_rank = 11
+                        elif val in ("K", "Q", "J"):
+                            pair_rank = 10
+                        else:
+                            pair_rank = int(val)
+
+                # Check for soft hand
+                ace_count = sum(1 for c in player_cards if c.value == "A")
+                if ace_count > 0 and player_total <= 21:
+                    non_ace_sum = sum(
+                        10 if c.value in ("K", "Q", "J") else
+                        (int(c.value) if c.value not in ("A",) else 0)
+                        for c in player_cards
+                    )
+                    if non_ace_sum + 11 + (ace_count - 1) == player_total:
+                        is_soft = True
+
+        # Get dealer upcard
+        dealer_upcard = 10
+        if snapshot.dealer_hand:
+            dealer_card = snapshot.dealer_hand[0]
+            if dealer_card.value == "A":
+                dealer_upcard = 11
+            elif dealer_card.value in ("K", "Q", "J"):
+                dealer_upcard = 10
+            else:
+                dealer_upcard = int(dealer_card.value)
+
+        # Get correct action
+        deviation = find_deviation(
+            player_total=player_total,
+            is_soft=is_soft,
+            is_pair=is_pair,
+            dealer_upcard=dealer_upcard,
+            true_count=true_count,
+            include_surrender=snapshot.can_surrender,
+        )
+
+        is_deviation = False
+        deviation_index = None
+        if deviation and deviation.should_deviate(true_count):
+            correct_action = deviation.get_action(true_count)
+            is_deviation = True
+            deviation_index = deviation.index
+        else:
+            correct_action = self.basic_strategy.get_action(
+                player_total=player_total,
+                dealer_upcard=dealer_upcard,
+                is_soft=is_soft,
+                is_pair=is_pair,
+                pair_rank=pair_rank,
+                can_double=snapshot.can_double,
+                can_surrender=snapshot.can_surrender,
+                can_split=snapshot.can_split,
+            )
+
+        # Compare player action to correct action
+        action_upper = action.upper()
+        correct_name = correct_action.name.upper()
+        is_correct = action_upper == correct_name
+
+        # Create and record decision
+        decision = Decision(
+            action=action,
+            player_total=player_total,
+            is_soft=is_soft,
+            is_pair=is_pair,
+            dealer_upcard=dealer_upcard,
+            running_count=running_count,
+            true_count=true_count,
+            correct_action=correct_action.name.lower(),
+            is_correct=is_correct,
+            is_deviation=is_deviation,
+            deviation_index=deviation_index,
+        )
+        self._hand_logger.record_decision(decision)
+
     def _on_take_insurance(self) -> None:
         """Player takes insurance."""
         if self.engine:
@@ -948,6 +1104,7 @@ class GameScene(BaseScene):
             play_sound("chip_stack")
             # Track that insurance was taken
             self._insurance_taken = True
+            self._hand_logger.set_insurance(taken=True)
             self.engine.take_insurance()
             if self.insurance_prompt:
                 self.insurance_prompt.hide()
@@ -957,6 +1114,7 @@ class GameScene(BaseScene):
         """Player declines insurance."""
         if self.engine:
             play_sound("button_click")
+            self._hand_logger.set_insurance(taken=False)
             self.engine.decline_insurance()
             if self.insurance_prompt:
                 self.insurance_prompt.hide()

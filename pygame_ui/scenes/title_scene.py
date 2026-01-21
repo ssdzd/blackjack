@@ -49,6 +49,8 @@ class TitleScene(BaseScene):
         self.performance_button: Optional[Button] = None
         self.statistics_button: Optional[Button] = None
         self.simulation_button: Optional[Button] = None
+        self.history_button: Optional[Button] = None
+        self.mistakes_button: Optional[Button] = None
         self.settings_button: Optional[Button] = None
 
     def _init_fonts(self) -> None:
@@ -62,8 +64,8 @@ class TitleScene(BaseScene):
     def _init_button(self) -> None:
         """Initialize menu buttons."""
         if self.start_button is None:
-            button_y_start = DIMENSIONS.SCREEN_HEIGHT - 310
-            button_spacing = 42
+            button_y_start = DIMENSIONS.SCREEN_HEIGHT - 340
+            button_spacing = 36
 
             self.start_button = Button(
                 x=DIMENSIONS.CENTER_X,
@@ -74,67 +76,91 @@ class TitleScene(BaseScene):
                 bg_color=(60, 100, 60),
                 hover_color=(80, 130, 80),
                 width=200,
-                height=45,
+                height=40,
             )
 
             self.drills_button = Button(
                 x=DIMENSIONS.CENTER_X,
                 y=button_y_start + button_spacing,
                 text="TRAINING DRILLS",
-                font_size=28,
+                font_size=26,
                 on_click=self._open_drills,
                 bg_color=(80, 80, 120),
                 hover_color=(100, 100, 150),
                 width=200,
-                height=36,
+                height=32,
             )
 
             self.performance_button = Button(
                 x=DIMENSIONS.CENTER_X,
                 y=button_y_start + button_spacing * 2,
                 text="PERFORMANCE",
-                font_size=28,
+                font_size=26,
                 on_click=self._open_performance,
                 bg_color=(100, 80, 60),
                 hover_color=(130, 100, 80),
                 width=200,
-                height=36,
+                height=32,
             )
 
             self.statistics_button = Button(
                 x=DIMENSIONS.CENTER_X,
                 y=button_y_start + button_spacing * 3,
                 text="STATISTICS",
-                font_size=28,
+                font_size=26,
                 on_click=self._open_statistics,
                 bg_color=(80, 100, 80),
                 hover_color=(100, 130, 100),
                 width=200,
-                height=36,
+                height=32,
             )
 
             self.simulation_button = Button(
                 x=DIMENSIONS.CENTER_X,
                 y=button_y_start + button_spacing * 4,
                 text="SIMULATION",
-                font_size=28,
+                font_size=26,
                 on_click=self._open_simulation,
                 bg_color=(100, 80, 100),
                 hover_color=(130, 100, 130),
                 width=200,
-                height=36,
+                height=32,
+            )
+
+            self.history_button = Button(
+                x=DIMENSIONS.CENTER_X,
+                y=button_y_start + button_spacing * 5,
+                text="HAND HISTORY",
+                font_size=26,
+                on_click=self._open_history,
+                bg_color=(80, 90, 80),
+                hover_color=(100, 120, 100),
+                width=200,
+                height=32,
+            )
+
+            self.mistakes_button = Button(
+                x=DIMENSIONS.CENTER_X,
+                y=button_y_start + button_spacing * 6,
+                text="MISTAKE ANALYSIS",
+                font_size=26,
+                on_click=self._open_mistakes,
+                bg_color=(100, 70, 70),
+                hover_color=(130, 90, 90),
+                width=200,
+                height=32,
             )
 
             self.settings_button = Button(
                 x=DIMENSIONS.CENTER_X,
-                y=button_y_start + button_spacing * 5,
+                y=button_y_start + button_spacing * 7,
                 text="SETTINGS",
-                font_size=28,
+                font_size=26,
                 on_click=self._open_settings,
                 bg_color=(60, 60, 80),
                 hover_color=(80, 80, 110),
                 width=200,
-                height=36,
+                height=32,
             )
 
     def on_enter(self) -> None:
@@ -164,6 +190,14 @@ class TitleScene(BaseScene):
         """Open the simulation scene."""
         self.change_scene("simulation", transition=True)
 
+    def _open_history(self) -> None:
+        """Open the hand history scene."""
+        self.change_scene("history", transition=True)
+
+    def _open_mistakes(self) -> None:
+        """Open the mistakes analysis scene."""
+        self.change_scene("mistakes", transition=True)
+
     def _open_settings(self) -> None:
         """Open the settings scene."""
         self.change_scene("settings", transition=True)
@@ -180,6 +214,10 @@ class TitleScene(BaseScene):
         if self.statistics_button and self.statistics_button.handle_event(event):
             return True
         if self.simulation_button and self.simulation_button.handle_event(event):
+            return True
+        if self.history_button and self.history_button.handle_event(event):
+            return True
+        if self.mistakes_button and self.mistakes_button.handle_event(event):
             return True
         if self.settings_button and self.settings_button.handle_event(event):
             return True
@@ -199,6 +237,12 @@ class TitleScene(BaseScene):
                 return True
             elif event.key == pygame.K_m:
                 self._open_simulation()
+                return True
+            elif event.key == pygame.K_h:
+                self._open_history()
+                return True
+            elif event.key == pygame.K_a:
+                self._open_mistakes()
                 return True
             elif event.key == pygame.K_c:
                 self.crt_filter.toggle()
@@ -236,6 +280,10 @@ class TitleScene(BaseScene):
             self.statistics_button.update(dt)
         if self.simulation_button:
             self.simulation_button.update(dt)
+        if self.history_button:
+            self.history_button.update(dt)
+        if self.mistakes_button:
+            self.mistakes_button.update(dt)
         if self.settings_button:
             self.settings_button.update(dt)
 
@@ -318,11 +366,11 @@ class TitleScene(BaseScene):
         subtitle_rect = subtitle_surface.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT // 3 + 60))
         surface.blit(subtitle_surface, subtitle_rect)
 
-        # Draw "Press SPACE to start" with blink
+        # Draw "Press SPACE to start" with blink (above buttons)
         prompt_text = "Press SPACE to start"
         prompt_surface = self._prompt_font.render(prompt_text, True, COLORS.TEXT_WHITE)
         prompt_surface.set_alpha(self._prompt_alpha)
-        prompt_rect = prompt_surface.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 270))
+        prompt_rect = prompt_surface.get_rect(center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 375))
         surface.blit(prompt_surface, prompt_rect)
 
         # Draw buttons
@@ -336,6 +384,10 @@ class TitleScene(BaseScene):
             self.statistics_button.draw(surface)
         if self.simulation_button:
             self.simulation_button.draw(surface)
+        if self.history_button:
+            self.history_button.draw(surface)
+        if self.mistakes_button:
+            self.mistakes_button.draw(surface)
         if self.settings_button:
             self.settings_button.draw(surface)
 
@@ -346,7 +398,7 @@ class TitleScene(BaseScene):
         surface.blit(version_surface, version_rect)
 
         # Draw controls hint
-        controls_text = "T: Training | P: Performance | S: Stats | M: Sim | C: CRT"
+        controls_text = "T: Training | P: Perf | S: Stats | M: Sim | H: History | A: Mistakes"
         controls_surface = self._version_font.render(controls_text, True, COLORS.TEXT_MUTED)
         controls_rect = controls_surface.get_rect(bottomleft=(20, DIMENSIONS.SCREEN_HEIGHT - 20))
         surface.blit(controls_surface, controls_rect)

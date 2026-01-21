@@ -123,7 +123,10 @@ class RemainingCardsDisplay:
     @property
     def suit_font(self) -> pygame.font.Font:
         if self._suit_font is None:
-            self._suit_font = pygame.font.Font(None, 22)
+            # Use system fonts that support Unicode suit symbols
+            self._suit_font = pygame.font.SysFont(
+                "segoeuisymbol,applesymbols,dejavusans", 18
+            )
         return self._suit_font
 
     def show(self) -> None:
