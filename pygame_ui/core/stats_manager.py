@@ -35,6 +35,13 @@ class DrillStats:
     speed_attempts: int = 0
     speed_high_score: int = 0
     speed_best_time: float = 0.0
+    # New drill stats
+    deviation_attempts: int = 0
+    deviation_correct: int = 0
+    tc_conversion_attempts: int = 0
+    tc_conversion_correct: int = 0
+    deck_estimation_attempts: int = 0
+    deck_estimation_correct: int = 0
 
 
 @dataclass
@@ -225,6 +232,39 @@ class StatsManager:
             self.stats.drills.speed_best_time = time
         self.save()
 
+    def record_deviation_drill(self, correct: bool) -> None:
+        """Record a deviation drill result.
+
+        Args:
+            correct: Whether the deviation decision was correct
+        """
+        self.stats.drills.deviation_attempts += 1
+        if correct:
+            self.stats.drills.deviation_correct += 1
+        self.save()
+
+    def record_tc_conversion_drill(self, correct: bool) -> None:
+        """Record a TC conversion drill result.
+
+        Args:
+            correct: Whether the conversion was correct
+        """
+        self.stats.drills.tc_conversion_attempts += 1
+        if correct:
+            self.stats.drills.tc_conversion_correct += 1
+        self.save()
+
+    def record_deck_estimation_drill(self, correct: bool) -> None:
+        """Record a deck estimation drill result.
+
+        Args:
+            correct: Whether the estimation was correct
+        """
+        self.stats.drills.deck_estimation_attempts += 1
+        if correct:
+            self.stats.drills.deck_estimation_correct += 1
+        self.save()
+
     def reset_stats(self) -> None:
         """Reset all statistics."""
         self.stats = SessionStats()
@@ -253,6 +293,27 @@ class StatsManager:
         if self.stats.drills.strategy_attempts == 0:
             return 0.0
         return (self.stats.drills.strategy_correct / self.stats.drills.strategy_attempts) * 100
+
+    @property
+    def deviation_accuracy(self) -> float:
+        """Calculate deviation drill accuracy."""
+        if self.stats.drills.deviation_attempts == 0:
+            return 0.0
+        return (self.stats.drills.deviation_correct / self.stats.drills.deviation_attempts) * 100
+
+    @property
+    def tc_conversion_accuracy(self) -> float:
+        """Calculate TC conversion drill accuracy."""
+        if self.stats.drills.tc_conversion_attempts == 0:
+            return 0.0
+        return (self.stats.drills.tc_conversion_correct / self.stats.drills.tc_conversion_attempts) * 100
+
+    @property
+    def deck_estimation_accuracy(self) -> float:
+        """Calculate deck estimation drill accuracy."""
+        if self.stats.drills.deck_estimation_attempts == 0:
+            return 0.0
+        return (self.stats.drills.deck_estimation_correct / self.stats.drills.deck_estimation_attempts) * 100
 
 
 # Global singleton

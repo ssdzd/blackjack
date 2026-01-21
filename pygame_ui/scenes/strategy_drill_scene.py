@@ -12,6 +12,7 @@ from pygame_ui.components.button import Button
 from pygame_ui.components.card import CardSprite
 from pygame_ui.components.toast import ToastManager, ToastType
 from pygame_ui.core.sound_manager import play_sound
+from pygame_ui.core.difficulty_manager import create_strategy_drill_manager
 from pygame_ui.effects.crt_filter import CRTFilter
 
 from core.cards import Card, Rank, Suit
@@ -104,6 +105,9 @@ class StrategyDrillScene(BaseScene):
 
         # Timing
         self.result_display_time = 0.0
+
+        # Progressive difficulty
+        self.difficulty = create_strategy_drill_manager()
 
         # Visual effects
         self.crt_filter = CRTFilter(scanline_alpha=20, vignette_strength=0.2)
@@ -351,6 +355,9 @@ class StrategyDrillScene(BaseScene):
         # Check if correct
         is_correct = action == self.correct_action
 
+        # Update difficulty
+        level_change = self.difficulty.record(is_correct)
+
         if is_correct:
             self.drills_correct += 1
             msg = "CORRECT!"
@@ -374,6 +381,16 @@ class StrategyDrillScene(BaseScene):
                 duration=2.0,
             )
             play_sound("lose")
+
+        # Show level change notification
+        if level_change:
+            self.toast_manager.spawn(
+                level_change,
+                DIMENSIONS.CENTER_X,
+                DIMENSIONS.CENTER_Y + 20,
+                ToastType.INFO,
+                duration=2.0,
+            )
 
         # Highlight buttons
         for btn in self.action_buttons:
@@ -536,6 +553,12 @@ class StrategyDrillScene(BaseScene):
             )
             dev_rect = dev_desc.get_rect(center=(DIMENSIONS.CENTER_X, 300))
             surface.blit(dev_desc, dev_rect)
+
+        # Difficulty indicator
+        diff_text = f"Difficulty: {self.difficulty.settings.name}"
+        diff = self.label_font.render(diff_text, True, COLORS.TEXT_MUTED)
+        diff_rect = diff.get_rect(center=(DIMENSIONS.CENTER_X, 350))
+        surface.blit(diff, diff_rect)
 
         # Start button
         if self.start_button:

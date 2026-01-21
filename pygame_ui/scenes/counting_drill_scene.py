@@ -13,6 +13,7 @@ from pygame_ui.components.card import CardSprite
 from pygame_ui.components.toast import ToastManager, ToastType
 from pygame_ui.core.animation import EaseType
 from pygame_ui.core.sound_manager import play_sound
+from pygame_ui.core.difficulty_manager import create_counting_drill_manager
 from pygame_ui.effects.crt_filter import CRTFilter
 
 from core.cards import Card, Rank, Suit
@@ -109,6 +110,9 @@ class CountingDrillScene(BaseScene):
         # Stats
         self.drills_completed = 0
         self.drills_correct = 0
+
+        # Progressive difficulty
+        self.difficulty = create_counting_drill_manager()
 
         # Visual effects
         self.crt_filter = CRTFilter(scanline_alpha=20, vignette_strength=0.2)
@@ -347,8 +351,12 @@ class CountingDrillScene(BaseScene):
             user_count = 0
 
         self.drills_completed += 1
+        is_correct = user_count == self.actual_count
 
-        if user_count == self.actual_count:
+        # Update difficulty
+        level_change = self.difficulty.record(is_correct)
+
+        if is_correct:
             self.drills_correct += 1
             self.toast_manager.spawn(
                 "CORRECT!",
@@ -367,6 +375,16 @@ class CountingDrillScene(BaseScene):
                 duration=2.0,
             )
             play_sound("lose")
+
+        # Show level change notification
+        if level_change:
+            self.toast_manager.spawn(
+                level_change,
+                DIMENSIONS.CENTER_X,
+                DIMENSIONS.CENTER_Y,
+                ToastType.INFO,
+                duration=2.0,
+            )
 
         self.state = DrillState.SHOWING_RESULT
         self.result_display_time = 0.0
@@ -515,6 +533,12 @@ class CountingDrillScene(BaseScene):
         surface.blit(label, (DIMENSIONS.CENTER_X - 200, 345))
         for btn in self.speed_buttons:
             btn.draw(surface)
+
+        # Difficulty indicator
+        diff_text = f"Difficulty: {self.difficulty.settings.name}"
+        diff = self.label_font.render(diff_text, True, COLORS.TEXT_MUTED)
+        diff_rect = diff.get_rect(center=(DIMENSIONS.CENTER_X, 440))
+        surface.blit(diff, diff_rect)
 
         # Start button
         if self.start_button:

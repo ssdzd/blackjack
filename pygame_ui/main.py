@@ -15,7 +15,11 @@ from pygame_ui.scenes.drill_menu_scene import DrillMenuScene
 from pygame_ui.scenes.counting_drill_scene import CountingDrillScene
 from pygame_ui.scenes.strategy_drill_scene import StrategyDrillScene
 from pygame_ui.scenes.speed_drill_scene import SpeedDrillScene
+from pygame_ui.scenes.deviation_drill_scene import DeviationDrillScene
+from pygame_ui.scenes.tc_conversion_scene import TCConversionScene
+from pygame_ui.scenes.deck_estimation_scene import DeckEstimationScene
 from pygame_ui.scenes.performance_scene import PerformanceScene
+from pygame_ui.scenes.statistics_scene import StatisticsScene
 from pygame_ui.core.sound_generator import generate_all_sounds
 import os
 
@@ -49,7 +53,11 @@ class Application:
         self.scene_manager.register("counting_drill", CountingDrillScene())
         self.scene_manager.register("strategy_drill", StrategyDrillScene())
         self.scene_manager.register("speed_drill", SpeedDrillScene())
+        self.scene_manager.register("deviation_drill", DeviationDrillScene())
+        self.scene_manager.register("tc_conversion", TCConversionScene())
+        self.scene_manager.register("deck_estimation", DeckEstimationScene())
         self.scene_manager.register("performance", PerformanceScene())
+        self.scene_manager.register("statistics", StatisticsScene())
 
         # Mark session start
         get_stats_manager().start_session()
