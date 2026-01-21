@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackjack Trainer</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Blackjack Card Counting Trainer</h1>
+            <div class="header-actions">
+                <button id="btn-strategy-chart" class="btn-small" onclick="openStrategyChart()">Strategy Chart (C)</button>
+                <div id="bankroll">Bankroll: $<span id="bankroll-amount">1000</span></div>
+            </div>
+        </header>
+
+        <main>
+            <!-- Game Play Area -->
+            <section id="game-area">
+                <div id="game-message"></div>
+
+                <div id="dealer-area">
+                    <h2>Dealer</h2>
+                    <div id="dealer-cards" class="cards"></div>
+                    <div id="dealer-value" class="hand-value"></div>
+                </div>
+
+                <div id="player-area">
+                    <h2>Player</h2>
+                    <div id="best-play-tooltip" class="hidden">
+                        <span class="tooltip-action"></span>
+                        <span class="tooltip-reason"></span>
+                        <span class="tooltip-deviation hidden">DEV</span>
+                    </div>
+                    <div id="player-hands">
+                        <div class="hand" id="hand-0">
+                            <div class="cards"></div>
+                            <div class="hand-value"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="controls">
+                    <div id="betting-controls">
+                        <div id="betting-hint" class="hidden">
+                            <div class="hint-recommendation">
+                                <span class="hint-units"></span>
+                                <span class="hint-edge"></span>
+                            </div>
+                            <div class="hint-count">TC: <span>0</span></div>
+                        </div>
+                        <input type="number" id="bet-amount" value="10" min="10" max="1000" step="10">
+                        <button id="btn-bet" onclick="placeBet()">Place Bet (B)</button>
+                    </div>
+
+                    <div id="insurance-controls" class="hidden">
+                        <div id="insurance-prompt">
+                            <span class="insurance-question">Dealer showing Ace. Insurance?</span>
+                            <span id="insurance-hint" class="hidden">TC suggests: <span class="hint-action"></span></span>
+                        </div>
+                        <div class="insurance-buttons">
+                            <button id="btn-take-insurance" onclick="takeInsurance()">Take Insurance (I)</button>
+                            <button id="btn-decline-insurance" onclick="declineInsurance()">No Insurance (N)</button>
+                        </div>
+                    </div>
+
+                    <div id="action-controls" class="hidden">
+                        <button id="btn-hit" onclick="playerAction('hit')">Hit (H)</button>
+                        <button id="btn-stand" onclick="playerAction('stand')">Stand (S)</button>
+                        <button id="btn-double" onclick="playerAction('double')">Double (D)</button>
+                        <button id="btn-split" onclick="playerAction('split')">Split (P)</button>
+                        <button id="btn-surrender" onclick="playerAction('surrender')">Surrender (R)</button>
+                    </div>
+
+                    <div id="result-controls" class="hidden">
+                        <div id="round-result"></div>
+                        <button id="btn-new-round" onclick="newRound()">New Round (N)</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Counting Drill Area -->
+            <section id="count-drill-area" class="drill-area hidden">
+                <h2>Counting Drill</h2>
+                <p class="drill-description">Cards will flash on screen. Keep the running count in your head, then enter it at the end.</p>
+
+                <div class="drill-settings">
+                    <div class="setting">
+                        <label for="drill-num-cards">Cards:</label>
+                        <input type="number" id="drill-num-cards" value="10" min="5" max="52">
+                    </div>
+                    <div class="setting">
+                        <label for="drill-system">System:</label>
+                        <select id="drill-system">
+                            <option value="hilo">Hi-Lo</option>
+                            <option value="ko">KO (Knock Out)</option>
+                            <option value="omega2">Omega II</option>
+                            <option value="wong_halves">Wong Halves</option>
+                        </select>
+                    </div>
+                    <div class="setting">
+                        <label for="drill-speed">Speed (ms):</label>
+                        <input type="number" id="drill-speed" value="1500" min="500" max="5000" step="100">
+                    </div>
+                    <div class="setting">
+                        <label>
+                            <input type="checkbox" id="speed-mode" onchange="toggleSpeedMode()">
+                            Speed Mode
+                        </label>
+                    </div>
+                </div>
+
+                <button id="btn-start-drill" onclick="startCountingDrill()">Start Drill</button>
+
+                <!-- Speed Drill Timer Display -->
+                <div id="speed-drill-info" class="hidden">
+                    <div class="speed-timer">
+                        <span class="timer-label">Time:</span>
+                        <span id="speed-timer-display">0.00s</span>
+                    </div>
+                    <div class="speed-progress">
+                        <span id="speed-card-progress">0/0</span>
+                    </div>
+                </div>
+
+                <div id="drill-cards" class="drill-card-area"></div>
+
+                <div id="drill-input-area" class="hidden">
+                    <label for="user-count">Your count:</label>
+                    <input type="number" id="user-count" step="0.5" placeholder="Enter running count">
+                    <button onclick="submitCount()">Submit</button>
+                </div>
+
+                <div id="drill-result" class="hidden"></div>
+
+                <!-- Speed Drill High Scores -->
+                <div id="speed-drill-scores" class="hidden">
+                    <h3>High Scores</h3>
+                    <div id="high-scores-list"></div>
+                </div>
+            </section>
+
+            <!-- Strategy Drill Area -->
+            <section id="strategy-drill-area" class="drill-area hidden">
+                <h2>Strategy Drill</h2>
+                <p class="drill-description">Choose the correct basic strategy action for the given hand.</p>
+
+                <div class="drill-settings">
+                    <div class="setting">
+                        <label>
+                            <input type="checkbox" id="include-deviations" onchange="toggleDeviationSettings()">
+                            Include Deviations
+                        </label>
+                    </div>
+                    <div class="setting">
+                        <label>
+                            <input type="checkbox" id="deviation-focus-mode" onchange="toggleDeviationFocus()">
+                            Deviation Focus (I18/Fab4)
+                        </label>
+                    </div>
+                    <div class="setting deviation-setting hidden">
+                        <label for="drill-true-count">True Count:</label>
+                        <input type="number" id="drill-true-count" value="0" step="1" min="-10" max="10">
+                    </div>
+                    <div class="setting deviation-focus-setting hidden">
+                        <label for="tc-range-min">TC Range:</label>
+                        <input type="number" id="tc-range-min" value="-5" step="1" min="-10" max="10" style="width:50px">
+                        <span>to</span>
+                        <input type="number" id="tc-range-max" value="10" step="1" min="-10" max="10" style="width:50px">
+                    </div>
+                </div>
+
+                <button id="btn-start-strategy" onclick="startStrategyDrill()">New Hand</button>
+
+                <div id="strategy-display">
+                    <div class="strategy-section">
+                        <h3>Dealer Shows</h3>
+                        <div id="strategy-dealer-card" class="cards"></div>
+                    </div>
+
+                    <div class="strategy-section">
+                        <h3>Your Hand</h3>
+                        <div id="strategy-player-cards" class="cards"></div>
+                        <div id="strategy-hand-info" class="hand-value"></div>
+                    </div>
+
+                    <div class="strategy-section" id="deviation-tc-display" style="display:none;">
+                        <h3>True Count</h3>
+                        <div id="current-tc" class="tc-display"></div>
+                    </div>
+                </div>
+
+                <div id="strategy-actions">
+                    <button class="strategy-action-btn" data-action="hit" onclick="checkStrategyAction('hit')">Hit</button>
+                    <button class="strategy-action-btn" data-action="stand" onclick="checkStrategyAction('stand')">Stand</button>
+                    <button class="strategy-action-btn" data-action="double" onclick="checkStrategyAction('double')">Double</button>
+                    <button class="strategy-action-btn" data-action="split" onclick="checkStrategyAction('split')">Split</button>
+                    <button class="strategy-action-btn" data-action="surrender" onclick="checkStrategyAction('surrender')">Surrender</button>
+                </div>
+
+                <div id="strategy-result" class="hidden"></div>
+                <div id="deviation-explanation" class="hidden"></div>
+            </section>
+
+            <!-- Performance Tab -->
+            <section id="performance-area" class="drill-area hidden">
+                <h2>Performance Tracking</h2>
+                <p class="drill-description">Track your progress across games and drills.</p>
+
+                <div class="performance-overview">
+                    <div class="stat-card">
+                        <h3>Game Stats</h3>
+                        <div class="stat-row">
+                            <span>Hands Played:</span>
+                            <span id="perf-hands-played">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Win Rate:</span>
+                            <span id="perf-win-rate">0%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Net Result:</span>
+                            <span id="perf-net-result">$0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Blackjacks:</span>
+                            <span id="perf-blackjacks">0</span>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3>Drill Accuracy</h3>
+                        <div class="stat-row">
+                            <span>Counting:</span>
+                            <span id="perf-count-accuracy">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Strategy:</span>
+                            <span id="perf-strategy-accuracy">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Deviations:</span>
+                            <span id="perf-deviation-accuracy">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Speed Best:</span>
+                            <span id="perf-speed-best">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-section">
+                    <h3>Bankroll Over Time</h3>
+                    <canvas id="bankroll-chart" width="600" height="200"></canvas>
+                </div>
+
+                <div class="chart-section">
+                    <h3>Drill Performance</h3>
+                    <canvas id="drill-chart" width="600" height="200"></canvas>
+                </div>
+
+                <button onclick="refreshPerformanceStats()" class="btn-small">Refresh Stats</button>
+                <button onclick="resetPerformanceStats()" class="btn-small btn-danger">Reset All Stats</button>
+            </section>
+
+            <!-- Stats Panel -->
+            <aside id="stats-panel">
+                <div id="count-section">
+                    <h3>Count <button id="toggle-count" class="toggle-btn">Hide</button></h3>
+                    <div id="running-count">Running: <span>0</span></div>
+                    <div id="true-count">True: <span>0</span></div>
+                    <div id="cards-remaining">Cards: <span>312</span></div>
+                </div>
+
+                <h3>Session Stats</h3>
+                <div id="hands-played">Hands: <span>0</span></div>
+                <div id="win-rate">Win Rate: <span>0%</span></div>
+                <div id="net-result">Net: <span>$0</span></div>
+
+                <h3>Training Hints</h3>
+                <div class="hint-toggles">
+                    <label>
+                        <input type="checkbox" id="toggle-best-play" checked onchange="toggleBestPlayHint()">
+                        Best Play Tooltip
+                    </label>
+                    <label>
+                        <input type="checkbox" id="toggle-bet-hints" checked onchange="toggleBetHints()">
+                        Betting Hints
+                    </label>
+                </div>
+
+                <div class="stats-actions">
+                    <button onclick="resetGame()" class="btn-small">Reset Session</button>
+                </div>
+            </aside>
+        </main>
+
+        <footer>
+            <nav>
+                <a href="#" id="nav-play" class="active">Play</a>
+                <a href="#" id="nav-count-drill">Count Drill</a>
+                <a href="#" id="nav-strategy-drill">Strategy Drill</a>
+                <a href="#" id="nav-performance">Performance</a>
+                <a href="#" id="nav-settings">Settings</a>
+            </nav>
+            <div class="keyboard-hints">
+                <span><kbd>H</kbd> Hit</span>
+                <span><kbd>S</kbd> Stand</span>
+                <span><kbd>D</kbd> Double</span>
+                <span><kbd>P</kbd> Split</span>
+                <span><kbd>R</kbd> Surrender</span>
+                <span><kbd>C</kbd> Chart</span>
+            </div>
+        </footer>
+
+        <!-- Strategy Chart Modal -->
+        <div id="strategy-chart-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Basic Strategy Chart</h2>
+                    <button class="modal-close" onclick="closeStrategyChart()">&times;</button>
+                </div>
+                <div class="chart-tabs">
+                    <button class="chart-tab active" data-tab="hard">Hard Totals</button>
+                    <button class="chart-tab" data-tab="soft">Soft Totals</button>
+                    <button class="chart-tab" data-tab="pairs">Pairs</button>
+                </div>
+                <div class="chart-container">
+                    <div id="chart-hard" class="chart-grid active"></div>
+                    <div id="chart-soft" class="chart-grid hidden"></div>
+                    <div id="chart-pairs" class="chart-grid hidden"></div>
+                </div>
+                <div class="chart-legend">
+                    <span class="legend-item legend-hit">H = Hit</span>
+                    <span class="legend-item legend-stand">S = Stand</span>
+                    <span class="legend-item legend-double">D = Double</span>
+                    <span class="legend-item legend-split">P = Split</span>
+                    <span class="legend-item legend-surrender">R = Surrender</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/websocket.js"></script>
+    <script src="/js/charts.js"></script>
+    <script src="/js/game.js"></script>
+
+    <script>
+        // Toggle deviations setting visibility
+        document.getElementById('include-deviations')?.addEventListener('change', (e) => {
+            document.querySelector('.deviation-setting')?.classList.toggle('hidden', !e.target.checked);
+        });
+    </script>
+</body>
+</html>
