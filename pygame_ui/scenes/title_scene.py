@@ -47,6 +47,8 @@ class TitleScene(BaseScene):
         self.start_button: Optional[Button] = None
         self.drills_button: Optional[Button] = None
         self.performance_button: Optional[Button] = None
+        self.statistics_button: Optional[Button] = None
+        self.simulation_button: Optional[Button] = None
         self.settings_button: Optional[Button] = None
 
     def _init_fonts(self) -> None:
@@ -60,8 +62,8 @@ class TitleScene(BaseScene):
     def _init_button(self) -> None:
         """Initialize menu buttons."""
         if self.start_button is None:
-            button_y_start = DIMENSIONS.SCREEN_HEIGHT - 230
-            button_spacing = 50
+            button_y_start = DIMENSIONS.SCREEN_HEIGHT - 310
+            button_spacing = 42
 
             self.start_button = Button(
                 x=DIMENSIONS.CENTER_X,
@@ -84,7 +86,7 @@ class TitleScene(BaseScene):
                 bg_color=(80, 80, 120),
                 hover_color=(100, 100, 150),
                 width=200,
-                height=40,
+                height=36,
             )
 
             self.performance_button = Button(
@@ -96,19 +98,43 @@ class TitleScene(BaseScene):
                 bg_color=(100, 80, 60),
                 hover_color=(130, 100, 80),
                 width=200,
-                height=40,
+                height=36,
+            )
+
+            self.statistics_button = Button(
+                x=DIMENSIONS.CENTER_X,
+                y=button_y_start + button_spacing * 3,
+                text="STATISTICS",
+                font_size=28,
+                on_click=self._open_statistics,
+                bg_color=(80, 100, 80),
+                hover_color=(100, 130, 100),
+                width=200,
+                height=36,
+            )
+
+            self.simulation_button = Button(
+                x=DIMENSIONS.CENTER_X,
+                y=button_y_start + button_spacing * 4,
+                text="SIMULATION",
+                font_size=28,
+                on_click=self._open_simulation,
+                bg_color=(100, 80, 100),
+                hover_color=(130, 100, 130),
+                width=200,
+                height=36,
             )
 
             self.settings_button = Button(
                 x=DIMENSIONS.CENTER_X,
-                y=button_y_start + button_spacing * 3,
+                y=button_y_start + button_spacing * 5,
                 text="SETTINGS",
                 font_size=28,
                 on_click=self._open_settings,
                 bg_color=(60, 60, 80),
                 hover_color=(80, 80, 110),
                 width=200,
-                height=40,
+                height=36,
             )
 
     def on_enter(self) -> None:
@@ -130,6 +156,14 @@ class TitleScene(BaseScene):
         """Open the performance scene."""
         self.change_scene("performance", transition=True)
 
+    def _open_statistics(self) -> None:
+        """Open the statistics calculator scene."""
+        self.change_scene("statistics", transition=True)
+
+    def _open_simulation(self) -> None:
+        """Open the simulation scene."""
+        self.change_scene("simulation", transition=True)
+
     def _open_settings(self) -> None:
         """Open the settings scene."""
         self.change_scene("settings", transition=True)
@@ -143,6 +177,10 @@ class TitleScene(BaseScene):
             return True
         if self.performance_button and self.performance_button.handle_event(event):
             return True
+        if self.statistics_button and self.statistics_button.handle_event(event):
+            return True
+        if self.simulation_button and self.simulation_button.handle_event(event):
+            return True
         if self.settings_button and self.settings_button.handle_event(event):
             return True
 
@@ -155,6 +193,12 @@ class TitleScene(BaseScene):
                 return True
             elif event.key == pygame.K_p:
                 self._open_performance()
+                return True
+            elif event.key == pygame.K_s:
+                self._open_statistics()
+                return True
+            elif event.key == pygame.K_m:
+                self._open_simulation()
                 return True
             elif event.key == pygame.K_c:
                 self.crt_filter.toggle()
@@ -188,6 +232,10 @@ class TitleScene(BaseScene):
             self.drills_button.update(dt)
         if self.performance_button:
             self.performance_button.update(dt)
+        if self.statistics_button:
+            self.statistics_button.update(dt)
+        if self.simulation_button:
+            self.simulation_button.update(dt)
         if self.settings_button:
             self.settings_button.update(dt)
 
@@ -284,6 +332,10 @@ class TitleScene(BaseScene):
             self.drills_button.draw(surface)
         if self.performance_button:
             self.performance_button.draw(surface)
+        if self.statistics_button:
+            self.statistics_button.draw(surface)
+        if self.simulation_button:
+            self.simulation_button.draw(surface)
         if self.settings_button:
             self.settings_button.draw(surface)
 
@@ -294,7 +346,7 @@ class TitleScene(BaseScene):
         surface.blit(version_surface, version_rect)
 
         # Draw controls hint
-        controls_text = "T: Training | P: Performance | C: CRT filter"
+        controls_text = "T: Training | P: Performance | S: Stats | M: Sim | C: CRT"
         controls_surface = self._version_font.render(controls_text, True, COLORS.TEXT_MUTED)
         controls_rect = controls_surface.get_rect(bottomleft=(20, DIMENSIONS.SCREEN_HEIGHT - 20))
         surface.blit(controls_surface, controls_rect)

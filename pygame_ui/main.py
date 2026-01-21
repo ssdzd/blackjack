@@ -20,6 +20,7 @@ from pygame_ui.scenes.tc_conversion_scene import TCConversionScene
 from pygame_ui.scenes.deck_estimation_scene import DeckEstimationScene
 from pygame_ui.scenes.performance_scene import PerformanceScene
 from pygame_ui.scenes.statistics_scene import StatisticsScene
+from pygame_ui.scenes.simulation_scene import SimulationScene
 from pygame_ui.core.sound_generator import generate_all_sounds
 import os
 
@@ -58,6 +59,7 @@ class Application:
         self.scene_manager.register("deck_estimation", DeckEstimationScene())
         self.scene_manager.register("performance", PerformanceScene())
         self.scene_manager.register("statistics", StatisticsScene())
+        self.scene_manager.register("simulation", SimulationScene())
 
         # Mark session start
         get_stats_manager().start_session()

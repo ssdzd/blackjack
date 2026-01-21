@@ -1,4 +1,4 @@
-"""Settings scene with toggles and sliders."""
+"""Settings scene with toggles and sliders for game configuration."""
 
 from typing import Optional, List, Callable
 
@@ -10,6 +10,7 @@ from pygame_ui.components.button import Button
 from pygame_ui.components.panel import Panel
 from pygame_ui.effects.crt_filter import CRTFilter
 from pygame_ui.core.sound_manager import get_sound_manager, play_sound
+from pygame_ui.core.game_settings import get_settings_manager, TableRules
 
 
 class Toggle:
@@ -143,6 +144,8 @@ class Slider:
         on_change: Callable[[float], None] = None,
         width: int = 200,
         height: int = 20,
+        step: float = 0.0,
+        value_format: str = "{:.0%}",
     ):
         self.x = x
         self.y = y
@@ -153,6 +156,8 @@ class Slider:
         self.on_change = on_change
         self.width = width
         self.height = height
+        self.step = step
+        self.value_format = value_format
 
         self._dragging = False
         self._hovered = False
@@ -182,24 +187,31 @@ class Slider:
     def _value_from_x(self, mouse_x: float) -> float:
         rel_x = mouse_x - (self.x - self.width // 2)
         normalized = max(0, min(1, rel_x / self.width))
-        return self.min_value + normalized * (self.max_value - self.min_value)
+        raw_value = self.min_value + normalized * (self.max_value - self.min_value)
+        if self.step > 0:
+            raw_value = round(raw_value / self.step) * self.step
+        return raw_value
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.MOUSEMOTION:
             self._hovered = self.rect.collidepoint(event.pos)
             if self._dragging:
-                self.value = self._value_from_x(event.pos[0])
-                if self.on_change:
-                    self.on_change(self.value)
+                new_value = self._value_from_x(event.pos[0])
+                if new_value != self.value:
+                    self.value = new_value
+                    if self.on_change:
+                        self.on_change(self.value)
                 return True
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 self._dragging = True
-                self.value = self._value_from_x(event.pos[0])
-                play_sound("button_click")
-                if self.on_change:
-                    self.on_change(self.value)
+                new_value = self._value_from_x(event.pos[0])
+                if new_value != self.value:
+                    self.value = new_value
+                    play_sound("button_click")
+                    if self.on_change:
+                        self.on_change(self.value)
                 return True
 
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
@@ -270,7 +282,7 @@ class Slider:
         )
 
         # Draw value
-        value_text = f"{int(self.value * 100)}%"
+        value_text = self.value_format.format(self.value)
         value_surface = self.font.render(value_text, True, COLORS.TEXT_MUTED)
         value_rect = value_surface.get_rect(
             midleft=(self.x + self.width // 2 + 15, self.y)
@@ -278,8 +290,187 @@ class Slider:
         surface.blit(value_surface, value_rect)
 
 
+class OptionSelector:
+    """A multi-option selector (radio button style)."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        label: str,
+        options: List[tuple[str, str]],  # (value, display_label)
+        initial_value: str,
+        on_change: Callable[[str], None] = None,
+    ):
+        self.x = x
+        self.y = y
+        self.label = label
+        self.options = options
+        self.value = initial_value
+        self.on_change = on_change
+
+        self._hovered_index = -1
+        self._font: Optional[pygame.font.Font] = None
+
+    @property
+    def font(self) -> pygame.font.Font:
+        if self._font is None:
+            self._font = pygame.font.Font(None, 24)
+        return self._font
+
+    def _get_option_rects(self) -> List[pygame.Rect]:
+        """Get rectangles for each option."""
+        rects = []
+        option_width = 70
+        total_width = len(self.options) * option_width
+        start_x = self.x - total_width // 2
+
+        for i in range(len(self.options)):
+            rect = pygame.Rect(
+                int(start_x + i * option_width),
+                int(self.y - 15),
+                option_width - 4,
+                30,
+            )
+            rects.append(rect)
+        return rects
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        rects = self._get_option_rects()
+
+        if event.type == pygame.MOUSEMOTION:
+            self._hovered_index = -1
+            for i, rect in enumerate(rects):
+                if rect.collidepoint(event.pos):
+                    self._hovered_index = i
+                    break
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for i, rect in enumerate(rects):
+                if rect.collidepoint(event.pos):
+                    new_value = self.options[i][0]
+                    if new_value != self.value:
+                        self.value = new_value
+                        play_sound("button_click")
+                        if self.on_change:
+                            self.on_change(self.value)
+                    return True
+
+        return False
+
+    def update(self, dt: float) -> None:
+        pass
+
+    def draw(self, surface: pygame.Surface) -> None:
+        # Draw label
+        label_font = pygame.font.Font(None, 28)
+        label_surface = label_font.render(self.label, True, COLORS.TEXT_WHITE)
+        label_rect = label_surface.get_rect(
+            midright=(self.x - 120, self.y)
+        )
+        surface.blit(label_surface, label_rect)
+
+        # Draw options
+        rects = self._get_option_rects()
+        for i, (value, display) in enumerate(self.options):
+            rect = rects[i]
+            is_selected = value == self.value
+            is_hovered = i == self._hovered_index
+
+            # Background
+            bg_color = (80, 130, 80) if is_selected else COLORS.PANEL_BG
+            pygame.draw.rect(surface, bg_color, rect, border_radius=5)
+
+            # Border
+            border_color = COLORS.GOLD if is_hovered else COLORS.TEXT_MUTED
+            pygame.draw.rect(surface, border_color, rect, width=2, border_radius=5)
+
+            # Text
+            text_color = COLORS.TEXT_WHITE if is_selected else COLORS.TEXT_MUTED
+            text_surface = self.font.render(display, True, text_color)
+            text_rect = text_surface.get_rect(center=rect.center)
+            surface.blit(text_surface, text_rect)
+
+
+class TabBar:
+    """Tab bar for switching between settings pages."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        tabs: List[str],
+        on_change: Callable[[int], None] = None,
+    ):
+        self.x = x
+        self.y = y
+        self.tabs = tabs
+        self.active_index = 0
+        self.on_change = on_change
+
+        self._font: Optional[pygame.font.Font] = None
+        self._tab_width = 140
+        self._tab_height = 40
+
+    @property
+    def font(self) -> pygame.font.Font:
+        if self._font is None:
+            self._font = pygame.font.Font(None, 28)
+        return self._font
+
+    def _get_tab_rects(self) -> List[pygame.Rect]:
+        rects = []
+        total_width = len(self.tabs) * self._tab_width
+        start_x = self.x - total_width // 2
+
+        for i in range(len(self.tabs)):
+            rect = pygame.Rect(
+                int(start_x + i * self._tab_width),
+                int(self.y),
+                self._tab_width - 4,
+                self._tab_height,
+            )
+            rects.append(rect)
+        return rects
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            rects = self._get_tab_rects()
+            for i, rect in enumerate(rects):
+                if rect.collidepoint(event.pos):
+                    if i != self.active_index:
+                        self.active_index = i
+                        play_sound("button_click")
+                        if self.on_change:
+                            self.on_change(i)
+                    return True
+        return False
+
+    def update(self, dt: float) -> None:
+        pass
+
+    def draw(self, surface: pygame.Surface) -> None:
+        rects = self._get_tab_rects()
+        for i, (rect, label) in enumerate(zip(rects, self.tabs)):
+            is_active = i == self.active_index
+
+            # Background
+            bg_color = (60, 80, 60) if is_active else (40, 40, 45)
+            pygame.draw.rect(surface, bg_color, rect, border_radius=5)
+
+            # Border (only top/sides for active tab effect)
+            border_color = COLORS.GOLD if is_active else COLORS.TEXT_MUTED
+            pygame.draw.rect(surface, border_color, rect, width=2, border_radius=5)
+
+            # Text
+            text_color = COLORS.GOLD if is_active else COLORS.TEXT_MUTED
+            text_surface = self.font.render(label, True, text_color)
+            text_rect = text_surface.get_rect(center=rect.center)
+            surface.blit(text_surface, text_rect)
+
+
 class SettingsScene(BaseScene):
-    """Settings scene with game options."""
+    """Settings scene with game options organized in tabs."""
 
     def __init__(self):
         super().__init__()
@@ -291,17 +482,32 @@ class SettingsScene(BaseScene):
             enabled=True,
         )
 
-        # UI components
+        # UI components per tab
+        self.tab_bar: Optional[TabBar] = None
         self.toggles: List[Toggle] = []
         self.sliders: List[Slider] = []
+        self.selectors: List[OptionSelector] = []
         self.back_button: Optional[Button] = None
+        self.reset_button: Optional[Button] = None
         self.panel: Optional[Panel] = None
+
+        # Tab-specific components
+        self._audio_toggles: List[Toggle] = []
+        self._audio_sliders: List[Slider] = []
+        self._rules_toggles: List[Toggle] = []
+        self._rules_sliders: List[Slider] = []
+        self._rules_selectors: List[OptionSelector] = []
+        self._session_sliders: List[Slider] = []
+        self._session_toggles: List[Toggle] = []
 
         # Fonts
         self._title_font: Optional[pygame.font.Font] = None
         self._font: Optional[pygame.font.Font] = None
 
-        # Settings values (will be synced with global state)
+        # Current tab
+        self._current_tab = 0  # 0=Audio, 1=Table Rules, 2=Session
+
+        # Settings values (synced with managers)
         self._crt_enabled = True
         self._sound_enabled = True
         self._volume = 0.7
@@ -325,15 +531,60 @@ class SettingsScene(BaseScene):
     def _setup_ui(self) -> None:
         """Initialize UI components."""
         center_x = DIMENSIONS.CENTER_X
-        start_y = DIMENSIONS.SCREEN_HEIGHT // 3
+
+        # Tab bar
+        self.tab_bar = TabBar(
+            x=center_x,
+            y=DIMENSIONS.SCREEN_HEIGHT // 5 + 40,
+            tabs=["Audio", "Table Rules", "Session"],
+            on_change=self._on_tab_change,
+        )
 
         # Panel background
         self.panel = Panel(
             x=center_x,
-            y=DIMENSIONS.CENTER_Y,
-            width=500,
-            height=300,
+            y=DIMENSIONS.CENTER_Y + 20,
+            width=600,
+            height=340,
         )
+
+        # Setup components for each tab
+        self._setup_audio_tab()
+        self._setup_rules_tab()
+        self._setup_session_tab()
+
+        # Back button
+        self.back_button = Button(
+            x=center_x - 100,
+            y=DIMENSIONS.SCREEN_HEIGHT - 100,
+            text="BACK",
+            font_size=32,
+            on_click=self._go_back,
+            bg_color=(100, 60, 60),
+            hover_color=(130, 80, 80),
+            width=150,
+            height=50,
+        )
+
+        # Reset defaults button
+        self.reset_button = Button(
+            x=center_x + 100,
+            y=DIMENSIONS.SCREEN_HEIGHT - 100,
+            text="RESET",
+            font_size=32,
+            on_click=self._reset_defaults,
+            bg_color=(80, 80, 60),
+            hover_color=(110, 110, 80),
+            width=150,
+            height=50,
+        )
+
+        self._update_active_components()
+
+    def _setup_audio_tab(self) -> None:
+        """Setup audio settings tab."""
+        center_x = DIMENSIONS.CENTER_X
+        start_y = DIMENSIONS.CENTER_Y - 40
 
         # CRT toggle
         crt_toggle = Toggle(
@@ -353,7 +604,7 @@ class SettingsScene(BaseScene):
             on_change=self._on_sound_change,
         )
 
-        self.toggles = [crt_toggle, sound_toggle]
+        self._audio_toggles = [crt_toggle, sound_toggle]
 
         # Volume slider
         volume_slider = Slider(
@@ -367,21 +618,191 @@ class SettingsScene(BaseScene):
             width=180,
         )
 
-        self.sliders = [volume_slider]
+        self._audio_sliders = [volume_slider]
 
-        # Back button
-        self.back_button = Button(
-            x=center_x,
-            y=DIMENSIONS.SCREEN_HEIGHT - 150,
-            text="BACK",
-            font_size=32,
-            on_click=self._go_back,
-            bg_color=(100, 60, 60),
-            hover_color=(130, 80, 80),
-            width=150,
-            height=50,
+    def _setup_rules_tab(self) -> None:
+        """Setup table rules tab."""
+        center_x = DIMENSIONS.CENTER_X
+        start_y = DIMENSIONS.CENTER_Y - 80
+        settings = get_settings_manager()
+        rules = settings.table_rules
+
+        # Number of decks selector
+        decks_selector = OptionSelector(
+            x=center_x + 60,
+            y=start_y,
+            label="Decks",
+            options=[("1", "1"), ("2", "2"), ("4", "4"), ("6", "6"), ("8", "8")],
+            initial_value=str(rules.num_decks),
+            on_change=self._on_decks_change,
         )
 
+        # Dealer soft 17 selector
+        h17_selector = OptionSelector(
+            x=center_x + 60,
+            y=start_y + 45,
+            label="Soft 17",
+            options=[("h17", "H17"), ("s17", "S17")],
+            initial_value="h17" if rules.dealer_hits_soft_17 else "s17",
+            on_change=self._on_h17_change,
+        )
+
+        # Blackjack payout selector
+        payout_selector = OptionSelector(
+            x=center_x + 60,
+            y=start_y + 90,
+            label="BJ Payout",
+            options=[("3:2", "3:2"), ("6:5", "6:5")],
+            initial_value="3:2" if rules.blackjack_payout == 1.5 else "6:5",
+            on_change=self._on_payout_change,
+        )
+
+        # Double rules selector
+        double_selector = OptionSelector(
+            x=center_x + 60,
+            y=start_y + 135,
+            label="Double On",
+            options=[("any", "Any"), ("9-11", "9-11"), ("10-11", "10-11")],
+            initial_value=rules.double_on,
+            on_change=self._on_double_change,
+        )
+
+        # Surrender selector
+        surrender_selector = OptionSelector(
+            x=center_x + 60,
+            y=start_y + 180,
+            label="Surrender",
+            options=[("none", "None"), ("late", "Late")],
+            initial_value=rules.surrender,
+            on_change=self._on_surrender_change,
+        )
+
+        self._rules_selectors = [
+            decks_selector,
+            h17_selector,
+            payout_selector,
+            double_selector,
+            surrender_selector,
+        ]
+
+        # DAS toggle
+        das_toggle = Toggle(
+            x=center_x + 100,
+            y=start_y + 225,
+            label="Double After Split",
+            initial_state=rules.double_after_split,
+            on_change=self._on_das_change,
+        )
+
+        # RSA toggle
+        rsa_toggle = Toggle(
+            x=center_x + 100,
+            y=start_y + 270,
+            label="Resplit Aces",
+            initial_state=rules.resplit_aces,
+            on_change=self._on_rsa_change,
+        )
+
+        self._rules_toggles = [das_toggle, rsa_toggle]
+
+        # Penetration slider
+        penetration_slider = Slider(
+            x=center_x + 50,
+            y=start_y + 315,
+            label="Penetration",
+            min_value=0.5,
+            max_value=0.9,
+            initial_value=rules.penetration,
+            step=0.05,
+            on_change=self._on_penetration_change,
+            width=180,
+        )
+
+        self._rules_sliders = [penetration_slider]
+
+    def _setup_session_tab(self) -> None:
+        """Setup session goals tab."""
+        center_x = DIMENSIONS.CENTER_X
+        start_y = DIMENSIONS.CENTER_Y - 60
+        settings = get_settings_manager()
+        goals = settings.session_goals
+
+        # Win goal slider
+        win_slider = Slider(
+            x=center_x + 50,
+            y=start_y,
+            label="Win Goal",
+            min_value=0,
+            max_value=1000,
+            initial_value=goals.win_goal,
+            step=50,
+            on_change=self._on_win_goal_change,
+            width=180,
+            value_format="${:.0f}",
+        )
+
+        # Loss limit slider
+        loss_slider = Slider(
+            x=center_x + 50,
+            y=start_y + 60,
+            label="Loss Limit",
+            min_value=0,
+            max_value=1000,
+            initial_value=goals.loss_limit,
+            step=50,
+            on_change=self._on_loss_limit_change,
+            width=180,
+            value_format="${:.0f}",
+        )
+
+        # Number of hands slider
+        hands_slider = Slider(
+            x=center_x + 50,
+            y=start_y + 120,
+            label="Hands",
+            min_value=1,
+            max_value=3,
+            initial_value=settings.num_hands,
+            step=1,
+            on_change=self._on_num_hands_change,
+            width=180,
+            value_format="{:.0f}",
+        )
+
+        self._session_sliders = [win_slider, loss_slider, hands_slider]
+
+        # Auto-stop toggle
+        auto_stop_toggle = Toggle(
+            x=center_x + 100,
+            y=start_y + 180,
+            label="Auto-Stop at Limit",
+            initial_state=goals.auto_stop,
+            on_change=self._on_auto_stop_change,
+        )
+
+        self._session_toggles = [auto_stop_toggle]
+
+    def _on_tab_change(self, tab_index: int) -> None:
+        """Handle tab change."""
+        self._current_tab = tab_index
+        self._update_active_components()
+
+    def _update_active_components(self) -> None:
+        """Update which components are active based on current tab."""
+        if self._current_tab == 0:  # Audio
+            self.toggles = self._audio_toggles
+            self.sliders = self._audio_sliders
+            self.selectors = []
+        elif self._current_tab == 1:  # Table Rules
+            self.toggles = self._rules_toggles
+            self.sliders = self._rules_sliders
+            self.selectors = self._rules_selectors
+        else:  # Session
+            self.toggles = self._session_toggles
+            self.sliders = self._session_sliders
+            self.selectors = []
+
+    # Audio callbacks
     def _on_crt_change(self, enabled: bool) -> None:
         self._crt_enabled = enabled
         self.crt_filter.enabled = enabled
@@ -394,11 +815,83 @@ class SettingsScene(BaseScene):
         self._volume = value
         get_sound_manager().volume = value
 
+    # Rules callbacks
+    def _on_decks_change(self, value: str) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.num_decks = int(value)
+        settings.save()
+
+    def _on_h17_change(self, value: str) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.dealer_hits_soft_17 = value == "h17"
+        settings.save()
+
+    def _on_payout_change(self, value: str) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.blackjack_payout = 1.5 if value == "3:2" else 1.2
+        settings.save()
+
+    def _on_double_change(self, value: str) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.double_on = value
+        settings.save()
+
+    def _on_surrender_change(self, value: str) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.surrender = value
+        settings.save()
+
+    def _on_das_change(self, enabled: bool) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.double_after_split = enabled
+        settings.save()
+
+    def _on_rsa_change(self, enabled: bool) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.resplit_aces = enabled
+        settings.save()
+
+    def _on_penetration_change(self, value: float) -> None:
+        settings = get_settings_manager()
+        settings.settings.table_rules.penetration = value
+        settings.save()
+
+    # Session callbacks
+    def _on_win_goal_change(self, value: float) -> None:
+        settings = get_settings_manager()
+        settings.settings.session_goals.win_goal = int(value)
+        settings.save()
+
+    def _on_loss_limit_change(self, value: float) -> None:
+        settings = get_settings_manager()
+        settings.settings.session_goals.loss_limit = int(value)
+        settings.save()
+
+    def _on_num_hands_change(self, value: float) -> None:
+        settings = get_settings_manager()
+        settings.num_hands = int(value)
+
+    def _on_auto_stop_change(self, enabled: bool) -> None:
+        settings = get_settings_manager()
+        settings.settings.session_goals.auto_stop = enabled
+        settings.save()
+
     def _go_back(self) -> None:
         play_sound("button_click")
         self.change_scene("title", transition=True)
 
+    def _reset_defaults(self) -> None:
+        """Reset all settings to defaults."""
+        play_sound("button_click")
+        get_settings_manager().reset_to_defaults()
+        # Refresh UI
+        self._setup_ui()
+
     def handle_event(self, event: pygame.event.Event) -> bool:
+        # Handle tab bar
+        if self.tab_bar and self.tab_bar.handle_event(event):
+            return True
+
         # Handle toggles
         for toggle in self.toggles:
             if toggle.handle_event(event):
@@ -409,8 +902,15 @@ class SettingsScene(BaseScene):
             if slider.handle_event(event):
                 return True
 
-        # Handle back button
+        # Handle selectors
+        for selector in self.selectors:
+            if selector.handle_event(event):
+                return True
+
+        # Handle buttons
         if self.back_button and self.back_button.handle_event(event):
+            return True
+        if self.reset_button and self.reset_button.handle_event(event):
             return True
 
         # Keyboard shortcuts
@@ -418,16 +918,34 @@ class SettingsScene(BaseScene):
             if event.key == pygame.K_ESCAPE:
                 self._go_back()
                 return True
+            elif event.key == pygame.K_LEFT:
+                if self._current_tab > 0:
+                    self._on_tab_change(self._current_tab - 1)
+                    if self.tab_bar:
+                        self.tab_bar.active_index = self._current_tab
+                return True
+            elif event.key == pygame.K_RIGHT:
+                if self._current_tab < 2:
+                    self._on_tab_change(self._current_tab + 1)
+                    if self.tab_bar:
+                        self.tab_bar.active_index = self._current_tab
+                return True
 
         return False
 
     def update(self, dt: float) -> None:
+        if self.tab_bar:
+            self.tab_bar.update(dt)
         for toggle in self.toggles:
             toggle.update(dt)
         for slider in self.sliders:
             slider.update(dt)
+        for selector in self.selectors:
+            selector.update(dt)
         if self.back_button:
             self.back_button.update(dt)
+        if self.reset_button:
+            self.reset_button.update(dt)
 
     def draw(self, surface: pygame.Surface) -> None:
         self._init_fonts()
@@ -446,6 +964,10 @@ class SettingsScene(BaseScene):
         )
         surface.blit(title_surface, title_rect)
 
+        # Draw tab bar
+        if self.tab_bar:
+            self.tab_bar.draw(surface)
+
         # Draw toggles
         for toggle in self.toggles:
             toggle.draw(surface)
@@ -454,12 +976,18 @@ class SettingsScene(BaseScene):
         for slider in self.sliders:
             slider.draw(surface)
 
-        # Draw back button
+        # Draw selectors
+        for selector in self.selectors:
+            selector.draw(surface)
+
+        # Draw buttons
         if self.back_button:
             self.back_button.draw(surface)
+        if self.reset_button:
+            self.reset_button.draw(surface)
 
         # Instructions
-        instructions = "ESC: Back"
+        instructions = "←→: Switch Tabs | ESC: Back"
         inst_surface = self._font.render(instructions, True, COLORS.TEXT_MUTED)
         inst_rect = inst_surface.get_rect(
             center=(DIMENSIONS.CENTER_X, DIMENSIONS.SCREEN_HEIGHT - 40)

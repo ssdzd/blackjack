@@ -27,6 +27,9 @@ from core.strategy.deviations import find_deviation, ILLUSTRIOUS_18, FAB_4
 from pygame_ui.effects.screen_shake import ScreenShake, SHAKE_IMPACT
 from pygame_ui.effects.crt_filter import CRTFilter
 from pygame_ui.scenes.base_scene import BaseScene
+from pygame_ui.core.session_manager import get_session_manager, SessionStatus
+from pygame_ui.core.game_settings import get_settings_manager
+from pygame_ui.components.progress_bar import SessionProgressBar
 
 
 class GameScene(BaseScene):
@@ -103,6 +106,10 @@ class GameScene(BaseScene):
         self._current_hand_doubled = False
         self._insurance_taken = False
 
+        # Session progress bar
+        self.session_progress: Optional[SessionProgressBar] = None
+        self._initial_bankroll = 1000
+
     def on_enter(self) -> None:
         """Initialize the game scene."""
         super().on_enter()
@@ -112,8 +119,8 @@ class GameScene(BaseScene):
             (DIMENSIONS.SCREEN_WIDTH, DIMENSIONS.SCREEN_HEIGHT)
         )
 
-        # Initialize engine
-        self.engine = EngineAdapter(initial_bankroll=1000)
+        # Initialize engine (uses rules from settings)
+        self.engine = EngineAdapter(initial_bankroll=self._initial_bankroll)
         self.engine.set_callbacks(
             on_card_dealt=self._on_card_dealt,
             on_hand_result=self._on_hand_result,
@@ -122,6 +129,23 @@ class GameScene(BaseScene):
             on_count_update=self._on_count_update,
             on_invalid_action=self._on_invalid_action,
             on_insurance_offered=self._on_insurance_offered,
+        )
+
+        # Initialize session manager with goals from settings
+        settings = get_settings_manager()
+        session = get_session_manager()
+        session.start_session(self._initial_bankroll, settings.session_goals)
+
+        # Session progress bar (positioned at top center)
+        self.session_progress = SessionProgressBar(
+            x=DIMENSIONS.CENTER_X,
+            y=55,
+            width=300,
+            height=14,
+        )
+        self.session_progress.set_goals(
+            settings.session_goals.win_goal,
+            settings.session_goals.loss_limit,
         )
 
         # Initialize deck sprite
@@ -386,7 +410,8 @@ class GameScene(BaseScene):
         if state == GameState.WAITING_FOR_BET and self.betting_hint:
             self.betting_hint.calculate_recommendation(
                 snapshot.true_count,
-                self.current_bet
+                base_bet=100,  # 1 unit = $100
+                current_bet=self.current_bet
             )
             self.betting_hint.show()
         else:
@@ -716,12 +741,75 @@ class GameScene(BaseScene):
                 amount=amount,
             )
 
+        # Record insurance result if taken
+        if self._insurance_taken and self.engine:
+            snapshot = self.engine.get_snapshot()
+            # Insurance wins if dealer has blackjack (21 with 2 cards)
+            dealer_has_blackjack = (
+                len(snapshot.dealer_hand) == 2 and
+                snapshot.dealer_hand_value == 21
+            )
+            stats.record_insurance(won=dealer_has_blackjack)
+
         # Reset hand state flags
         self._current_hand_doubled = False
+        self._insurance_taken = False
 
         # Update bankroll display
         if self.bankroll_display and self.engine:
             self.bankroll_display.set_value(self.engine.bankroll)
+
+        # Update session manager and progress bar
+        if self.engine:
+            session = get_session_manager()
+            session.record_hand(
+                won=result in ("win", "blackjack"),
+                pushed=result == "push",
+            )
+            status = session.update_bankroll(self.engine.bankroll)
+
+            # Update progress bar
+            if self.session_progress:
+                profit = self.engine.bankroll - self._initial_bankroll
+                self.session_progress.update_progress(profit)
+
+            # Show alerts for approaching/reaching limits
+            if status == SessionStatus.WIN_GOAL_REACHED:
+                if self.toast_manager:
+                    self.toast_manager.spawn(
+                        "WIN GOAL REACHED!",
+                        DIMENSIONS.CENTER_X,
+                        100,
+                        ToastType.SUCCESS,
+                        duration=3.0,
+                    )
+            elif status == SessionStatus.LOSS_LIMIT_REACHED:
+                if self.toast_manager:
+                    self.toast_manager.spawn(
+                        "LOSS LIMIT REACHED",
+                        DIMENSIONS.CENTER_X,
+                        100,
+                        ToastType.ERROR,
+                        duration=3.0,
+                    )
+            elif status == SessionStatus.APPROACHING_WIN:
+                if self.toast_manager:
+                    self.toast_manager.spawn(
+                        "Approaching win goal!",
+                        DIMENSIONS.CENTER_X,
+                        100,
+                        ToastType.INFO,
+                        duration=1.5,
+                    )
+            elif status == SessionStatus.APPROACHING_LOSS:
+                if self.toast_manager:
+                    self.toast_manager.spawn(
+                        "Approaching loss limit!",
+                        DIMENSIONS.CENTER_X,
+                        100,
+                        ToastType.WARNING,
+                        duration=1.5,
+                    )
 
         # Clear bet chips after result
         if self.bet_chips:
@@ -1085,6 +1173,10 @@ class GameScene(BaseScene):
         if self.bet_chips:
             self.bet_chips.update(dt)
 
+        # Update session progress bar
+        if self.session_progress:
+            self.session_progress.update(dt)
+
         # Update particles
         self.particles.update(dt)
 
@@ -1196,6 +1288,10 @@ class GameScene(BaseScene):
             state_rendered = font_small.render(state_text, True, COLORS.TEXT_MUTED)
             state_rect = state_rendered.get_rect(center=(DIMENSIONS.CENTER_X, 30))
             surface.blit(state_rendered, state_rect)
+
+        # Session progress bar (below state indicator)
+        if self.session_progress:
+            self.session_progress.draw(surface)
 
         # Instructions (contextual based on game state)
         font_small = pygame.font.Font(None, 24)

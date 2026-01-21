@@ -10,6 +10,7 @@ from core.game.events import EventType, GameEvent
 from core.game.state import GameState
 from core.counting.hilo import HiLoSystem
 from core.strategy.rules import RuleSet
+from pygame_ui.core.game_settings import get_settings_manager
 
 if TYPE_CHECKING:
     from pygame_ui.components.card import CardSprite
@@ -100,10 +101,13 @@ class EngineAdapter:
         """Initialize the adapter.
 
         Args:
-            rules: Game rules (defaults to standard 6-deck)
+            rules: Game rules (defaults to settings or standard 6-deck)
             initial_bankroll: Starting bankroll
         """
-        self.rules = rules or RuleSet()
+        # Use rules from settings if not provided
+        if rules is None:
+            rules = self._rules_from_settings()
+        self.rules = rules
         self._initial_bankroll = Decimal(str(initial_bankroll))
 
         # Core engine
@@ -125,17 +129,42 @@ class EngineAdapter:
         # Initialize engine
         self._init_game()
 
+    def _rules_from_settings(self) -> RuleSet:
+        """Create RuleSet from game settings."""
+        settings = get_settings_manager()
+        table_rules = settings.table_rules
+        return RuleSet(
+            num_decks=table_rules.num_decks,
+            dealer_hits_soft_17=table_rules.dealer_hits_soft_17,
+            blackjack_payout=table_rules.blackjack_payout,
+            double_after_split=table_rules.double_after_split,
+            double_on=table_rules.double_on,
+            resplit_aces=table_rules.resplit_aces,
+            max_splits=table_rules.max_splits,
+            surrender=table_rules.surrender,
+        )
+
+    def _get_penetration(self) -> float:
+        """Get penetration from settings."""
+        return get_settings_manager().table_rules.penetration
+
     def _init_game(self) -> None:
         """Initialize a new game engine."""
+        penetration = self._get_penetration()
         self.game = BlackjackGame(
             rules=self.rules,
             num_decks=self.rules.num_decks,
+            penetration=penetration,
             initial_bankroll=self._initial_bankroll,
         )
         self.counter.reset()
 
         # Subscribe to all events
         self.game.subscribe(self._handle_event)
+
+    def reload_rules(self) -> None:
+        """Reload rules from settings (e.g. when returning from settings)."""
+        self.rules = self._rules_from_settings()
 
     def _handle_event(self, event: GameEvent) -> None:
         """Handle events from the core engine."""
