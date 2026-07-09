@@ -4,13 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blackjack Trainer</title>
-    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/tokens.css">
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/table.css">
+    <link rel="stylesheet" href="/css/components.css">
+    <link rel="stylesheet" href="/css/effects.css">
 </head>
 <body>
     <div id="app">
         <header>
             <h1>Blackjack Card Counting Trainer</h1>
             <div class="header-actions">
+                <button id="btn-mute" class="btn-small">Sound: On</button>
                 <button id="btn-strategy-chart" class="btn-small">Strategy Chart (C)</button>
                 <div id="bankroll">Bankroll: $<span id="bankroll-amount">1000</span></div>
             </div>
@@ -19,6 +24,8 @@
         <main>
             <!-- Game Play Area -->
             <section id="game-area">
+                <div id="table-felt">
+                <div id="shoe-anchor" aria-hidden="true"></div>
                 <div id="game-message"></div>
 
                 <div id="dealer-area">
@@ -78,6 +85,7 @@
                         <div id="round-result"></div>
                         <button id="btn-new-round">New Round (N)</button>
                     </div>
+                </div>
                 </div>
             </section>
 
@@ -343,6 +351,7 @@
         </div>
     </div>
 
+    <canvas id="fx-canvas" aria-hidden="true"></canvas>
     <script type="module" src="/js/main.js"></script>
 </body>
 </html>

@@ -9,11 +9,16 @@ from playwright.sync_api import Page
 
 @pytest.fixture(scope="session")
 def server():
-    """Start the FastAPI server for UI tests."""
+    """Start the FastAPI server for UI tests.
+
+    Output goes to DEVNULL: an unread PIPE fills the OS pipe buffer with
+    access logs after a few dozen page loads, blocking uvicorn mid-write
+    and hanging every subsequent test.
+    """
     proc = subprocess.Popen(
         ["uvicorn", "api.main:app", "--port", "8765"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     time.sleep(2)  # Wait for server startup
     yield proc

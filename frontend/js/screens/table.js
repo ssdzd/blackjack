@@ -1,5 +1,12 @@
 /**
- * The play screen: game flow over WebSocket, controls, and in-play hints
+ * The play screen: game flow over WebSocket, choreographed playback,
+ * controls, and in-play hints.
+ *
+ * WS events arrive in a burst (the server resolves a whole dealer turn
+ * instantly). Each event carries a full state snapshot, so playback
+ * enqueues them and applies snapshots on timed beats — cards land one by
+ * one, the hole card flips, the result crunches — while any user input
+ * flushes the queue instantly to keep the UI honest.
  */
 
 import { BlackjackClient } from '../ws.js';
@@ -7,10 +14,16 @@ import { getSessionId } from '../api.js';
 import { appState } from '../state.js';
 import { StatsTracker } from '../session-stats.js';
 import { CountTracker } from '../count-local.js';
-import { renderCard, renderHand } from '../components/cards.js';
 import { getHandInfo } from '../hand-info.js';
 import { getBestPlay, getBettingHint, getActionClass, ACTION_NAMES } from '../strategy-data.js';
 import { refreshChartHighlight } from './strategy-chart.js';
+import { syncTable, initCardTilt } from '../components/cards3d.js';
+import { wait } from '../juice/tween.js';
+import { addShake, SHAKE } from '../juice/shake.js';
+import { burstAt } from '../juice/particles.js';
+import { play } from '../juice/sound.js';
+import { toast } from '../juice/toast.js';
+import { attachCounter } from '../juice/counter.js';
 
 let wsClient = null;
 export let statsTracker = null;
@@ -22,14 +35,170 @@ let lastBetAmount = 10;
 let showingResult = false;
 let bestPlayHintEnabled = true;
 let betHintsEnabled = true;
+let bankrollCounter = null;
+
+// ---- Event choreography queue ----
+
+const queue = [];
+let draining = false;
+let flushing = false;
+
+function enqueue(item) {
+    queue.push(item);
+    if (!draining) drain();
+}
+
+async function drain() {
+    draining = true;
+    while (queue.length) {
+        const item = queue.shift();
+        try {
+            await playbackStep(item);
+        } catch (err) {
+            console.error('Playback error:', err);
+        }
+    }
+    draining = false;
+    flushing = false;
+}
+
+/** Apply all pending steps instantly (called before any user action). */
+function flushQueue() {
+    flushing = true;
+}
+
+function beat(ms) {
+    return flushing ? Promise.resolve() : wait(ms);
+}
+
+async function playbackStep(item) {
+    if (item.kind === 'state') {
+        applyState(item.state);
+        return;
+    }
+
+    const { event_type, state } = item.data;
+    const data = item.data.data || {};
+
+    // Count every visible card exactly when it lands on the table
+    if (event_type === 'CARD_DEALT' && data.card !== '??') {
+        const rank = data.card.replace(/[♠♥♦♣]/g, '');
+        countTracker.countCard(rank);
+    }
+
+    switch (event_type) {
+        case 'CARD_DEALT':
+            applyState(state);
+            play('deal');
+            await beat(120);
+            break;
+
+        case 'DEALER_REVEALS':
+            applyState(state);
+            play('flip');
+            await beat(400);
+            break;
+
+        case 'DEALER_HITS':
+            applyState(state);
+            await beat(60);
+            break;
+
+        case 'BET_PLACED':
+            applyState(state);
+            play('chip');
+            break;
+
+        case 'SHOE_SHUFFLED':
+            countTracker.reset(6);
+            play('shuffle');
+            toast('Shoe shuffled — the count resets', { variant: 'gold' });
+            applyState(state);
+            break;
+
+        case 'PLAYER_BUSTS':
+            applyState(state);
+            play('bust');
+            addShake(SHAKE.LIGHT);
+            await beat(280);
+            break;
+
+        case 'PLAYER_BLACKJACK':
+            applyState(state);
+            showMessage('Blackjack!');
+            play('blackjack');
+            addShake(SHAKE.MEDIUM);
+            burstAt(document.getElementById('player-hands'), 'confetti');
+            await beat(480);
+            break;
+
+        case 'DEALER_BLACKJACK':
+            applyState(state);
+            showMessage('Dealer Blackjack');
+            await beat(240);
+            break;
+
+        case 'DEALER_BUSTS':
+            applyState(state);
+            burstAt(document.getElementById('dealer-cards'), 'sparks');
+            await beat(200);
+            break;
+
+        case 'ROUND_ENDED': {
+            const result = data.result || 0;
+            const outcome = result > 0 ? 'win' : (result < 0 ? 'lose' : 'push');
+            statsTracker.recordHand({
+                outcome: outcome,
+                amount: Math.abs(result),
+                wager: lastBetAmount,
+            });
+            showingResult = true;
+            showRoundResult(result);
+            applyState(state);
+
+            if (result > 0) {
+                play('win');
+                addShake(SHAKE.LIGHT);
+                burstAt(document.getElementById('player-hands'), 'coins');
+            } else if (result < 0) {
+                play('lose');
+                pulseFelt();
+            } else {
+                play('push');
+            }
+            await beat(320);
+            break;
+        }
+
+        default:
+            applyState(state);
+            break;
+    }
+}
+
+function pulseFelt() {
+    const felt = document.getElementById('table-felt');
+    if (!felt) return;
+    felt.classList.remove('pulse-loss');
+    void felt.offsetWidth;
+    felt.classList.add('pulse-loss');
+}
+
+// ---- Init / transport ----
 
 export function initTable() {
     statsTracker = new StatsTracker();
     countTracker = new CountTracker('hilo');
 
+    const bankrollEl = document.getElementById('bankroll-amount');
+    if (bankrollEl) {
+        bankrollCounter = attachCounter(bankrollEl, { flashClass: 'counter-flash' });
+    }
+
     connectWebSocket();
     wireControls();
     wireKeyboard();
+    initCardTilt();
 }
 
 function connectWebSocket() {
@@ -46,11 +215,11 @@ function connectWebSocket() {
     });
 
     wsClient.on('state_update', (data) => {
-        renderGameState(data.state);
+        enqueue({ kind: 'state', state: data.state });
     });
 
     wsClient.on('event', (data) => {
-        handleGameEvent(data);
+        enqueue({ kind: 'event', data });
     });
 
     wsClient.on('error', (data) => {
@@ -60,61 +229,23 @@ function connectWebSocket() {
     wsClient.connect(getSessionId());
 }
 
-function handleGameEvent(data) {
-    const { event_type, state } = data;
-
-    // Track cards for count
-    if (event_type === 'CARD_DEALT' && data.data.card !== '??') {
-        const card = data.data.card;
-        // Extract rank from card string (e.g., "A♠" -> "A", "10♥" -> "10")
-        const rank = card.replace(/[♠♥♦♣]/g, '');
-        countTracker.countCard(rank);
-    }
-
-    // Reset count on shoe shuffle
-    if (event_type === 'SHOE_SHUFFLED') {
-        countTracker.reset(6);
-        showMessage('Shoe shuffled!');
-    }
-
-    // Track round results
-    if (event_type === 'ROUND_ENDED') {
-        const result = data.data.result || 0;
-        const outcome = result > 0 ? 'win' : (result < 0 ? 'lose' : 'push');
-        statsTracker.recordHand({
-            outcome: outcome,
-            amount: Math.abs(result),
-            wager: lastBetAmount,
-        });
-        showingResult = true;
-        showRoundResult(result);
-    }
-
-    if (event_type === 'PLAYER_BLACKJACK') {
-        showMessage('Blackjack!');
-    }
-
-    if (event_type === 'DEALER_BLACKJACK') {
-        showMessage('Dealer Blackjack');
-    }
-
-    renderGameState(state);
-}
+// ---- State application (single source of DOM truth) ----
 
 export function renderGameState(state) {
+    enqueue({ kind: 'state', state });
+}
+
+function applyState(state) {
     if (!state) return;
     appState.gameState = state;
 
-    // Update bankroll
-    document.getElementById('bankroll-amount').textContent = state.bankroll.toFixed(0);
+    if (bankrollCounter) {
+        bankrollCounter.set(state.bankroll);
+    }
 
-    // Render dealer cards
-    const dealerCards = document.getElementById('dealer-cards');
-    dealerCards.innerHTML = state.dealer_hand.cards
-        .map(card => renderCard(card))
-        .join('');
+    syncTable(state);
 
-    // Render dealer value
+    // Dealer value line
     const dealerValue = document.getElementById('dealer-value');
     if (state.state === 'PLAYER_TURN') {
         dealerValue.textContent = state.dealer_showing ? `Showing: ${state.dealer_showing}` : '';
@@ -124,19 +255,9 @@ export function renderGameState(state) {
         dealerValue.textContent = '';
     }
 
-    // Render player hands
-    const playerHands = document.getElementById('player-hands');
-    if (state.player_hands && state.player_hands.length > 0) {
-        playerHands.innerHTML = state.player_hands
-            .map((hand, i) => renderHand(hand, i, i === state.current_hand_index && state.state === 'PLAYER_TURN'))
-            .join('');
-    } else {
-        playerHands.innerHTML = '<div class="hand"><div class="cards"></div><div class="hand-value"></div></div>';
-    }
-
     updateControls(state);
 
-    // Update shoe info for count display
+    // Shoe info for the count display
     if (state.shoe_cards_remaining) {
         const cardsEl = document.querySelector('#cards-remaining span');
         if (cardsEl) cardsEl.textContent = state.shoe_cards_remaining;
@@ -144,7 +265,6 @@ export function renderGameState(state) {
         countTracker.updateDisplay();
     }
 
-    // Update hints and the reference chart highlight
     updateBestPlayTooltip(state);
     updateBettingHint(state);
     refreshChartHighlight();
@@ -237,7 +357,7 @@ export function showError(message) {
     }
 }
 
-// --- Actions ---
+// ---- Actions ----
 
 function placeBet() {
     const amount = parseInt(document.getElementById('bet-amount').value);
@@ -246,10 +366,14 @@ function placeBet() {
         return;
     }
     lastBetAmount = amount;
+    flushQueue();
+    play('chip');
     wsClient.placeBet(amount);
 }
 
 function playerAction(action) {
+    flushQueue();
+    play('click');
     wsClient.action(action);
 }
 
@@ -257,6 +381,7 @@ function newRound() {
     showingResult = false;
     document.getElementById('round-result').textContent = '';
     document.getElementById('round-result').className = '';
+    flushQueue();
     wsClient.newRound();
 }
 
@@ -264,18 +389,23 @@ export function resetGame() {
     showingResult = false;
     statsTracker.reset();
     countTracker.reset(6);
+    flushQueue();
     wsClient.send('reset_game');
 }
 
 function takeInsurance() {
+    flushQueue();
+    play('chip');
     wsClient.send('insurance', { take: true });
 }
 
 function declineInsurance() {
+    flushQueue();
+    play('click');
     wsClient.send('insurance', { take: false });
 }
 
-// --- Hints ---
+// ---- Hints ----
 
 function updateInsuranceHint() {
     const hintEl = document.getElementById('insurance-hint');
@@ -361,7 +491,7 @@ function updateBettingHint(state) {
     hintEl.classList.remove('hidden');
 }
 
-// --- Wiring ---
+// ---- Wiring ----
 
 function wireControls() {
     document.getElementById('btn-bet')?.addEventListener('click', placeBet);

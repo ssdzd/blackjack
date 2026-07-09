@@ -8,6 +8,7 @@ import { initStrategyChart } from './screens/strategy-chart.js';
 import { initDrills } from './screens/drills.js';
 import { initStrategyDrill } from './screens/strategy-drill.js';
 import { initPerformance, refreshPerformanceStats } from './screens/performance.js';
+import { armSound, isMuted, setMuted } from './juice/sound.js';
 
 function setupNavigation() {
     document.getElementById('nav-play').addEventListener('click', (e) => {
@@ -70,7 +71,22 @@ function setupCountToggle() {
     }
 }
 
+function setupMuteButton() {
+    const btn = document.getElementById('btn-mute');
+    if (!btn) return;
+    const label = () => {
+        btn.textContent = isMuted() ? 'Sound: Off' : 'Sound: On';
+    };
+    label();
+    btn.addEventListener('click', () => {
+        setMuted(!isMuted());
+        label();
+    });
+}
+
 function init() {
+    armSound();
+
     initTable();
     initStrategyChart();
     initDrills();
@@ -79,6 +95,7 @@ function init() {
 
     setupNavigation();
     setupCountToggle();
+    setupMuteButton();
 
     document.getElementById('btn-reset-session')?.addEventListener('click', resetGame);
 }

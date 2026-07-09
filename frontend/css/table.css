@@ -1,0 +1,546 @@
+/**
+ * The table: felt surface, cards, hands, and in-play controls
+ */
+
+/* ---- Felt surface ---- */
+
+#table-felt {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 560px;
+    padding: 30px 34px 26px;
+    border-radius: var(--radius-table);
+    border: 10px solid var(--rail);
+    outline: 1px solid var(--rail-edge);
+    background:
+        radial-gradient(115% 90% at 50% 8%, var(--felt-hi) 0%, var(--felt-mid) 46%, var(--felt-lo) 100%);
+    box-shadow:
+        inset 0 2px 24px rgba(0, 0, 0, 0.55),
+        inset 0 0 90px rgba(0, 0, 0, 0.35),
+        0 30px 60px -30px rgba(0, 0, 0, 0.9);
+    position: relative;
+    z-index: var(--z-felt);
+}
+
+/* Felt weave */
+#table-felt::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: calc(var(--radius-table) - 10px);
+    background-image:
+        repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px),
+        repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+}
+
+/* Table inscription */
+#table-felt::after {
+    content: "BLACKJACK PAYS 3 TO 2 · DEALER STANDS BEHIND THE LINE";
+    position: absolute;
+    top: 41%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.42em;
+    color: rgba(212, 175, 55, 0.16);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+}
+
+#game-message {
+    min-height: 30px;
+    text-align: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 21px;
+    letter-spacing: 0.06em;
+    color: var(--gold-bright);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity var(--dur-med) var(--ease-smooth), transform var(--dur-med) var(--ease-smooth);
+    padding: 2px 0 6px;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+}
+
+#game-message.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+#game-message.error {
+    color: var(--loss);
+    font-style: normal;
+    font-family: var(--font-body);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+}
+
+/* ---- Dealer / player zones ---- */
+
+#dealer-area,
+#player-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+}
+
+#dealer-area h2,
+#player-area h2 {
+    font-family: var(--font-body);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: rgba(243, 236, 221, 0.34);
+}
+
+.cards {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    min-height: 132px;
+}
+
+#player-hands {
+    display: flex;
+    justify-content: center;
+    gap: 26px;
+    flex-wrap: wrap;
+}
+
+.hand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 8px;
+    border-radius: var(--radius-lg);
+    border: 1px solid transparent;
+    transition: border-color var(--dur-med) var(--ease-smooth), box-shadow var(--dur-med) var(--ease-smooth);
+}
+
+.hand.active {
+    border-color: var(--gold-faint);
+    box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.12), 0 0 42px -12px var(--gold-glow);
+}
+
+.hand-value {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--ivory-soft);
+    letter-spacing: 0.04em;
+    min-height: 21px;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.bet-amount {
+    color: var(--gold-bright);
+    margin-left: 6px;
+}
+
+/* ---- Cards ---- */
+
+.card {
+    width: 92px;
+    height: 132px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(163deg, var(--card-face-hi) 0%, var(--card-face-lo) 100%);
+    color: var(--card-ink);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65),
+        inset 0 0 0 1px rgba(35, 37, 44, 0.06),
+        var(--shadow-card);
+    position: relative;
+    flex-shrink: 0;
+    animation: cardDeal var(--dur-med) var(--ease-back) backwards;
+}
+
+.card .card-rank {
+    position: absolute;
+    top: 8px;
+    left: 11px;
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.card .card-suit {
+    position: absolute;
+    bottom: 8px;
+    right: 11px;
+    font-size: 30px;
+    line-height: 1;
+}
+
+.card.red {
+    color: var(--card-red);
+}
+
+.card.face-down {
+    background:
+        radial-gradient(80% 60% at 50% 40%, rgba(212, 175, 55, 0.08), transparent 70%),
+        repeating-linear-gradient(45deg, rgba(212, 175, 55, 0.13) 0 1px, transparent 1px 9px),
+        repeating-linear-gradient(-45deg, rgba(212, 175, 55, 0.13) 0 1px, transparent 1px 9px),
+        linear-gradient(163deg, #17301f 0%, var(--card-back-felt) 100%);
+    box-shadow:
+        inset 0 0 0 1px rgba(212, 175, 55, 0.25),
+        inset 0 0 0 5px rgba(7, 9, 8, 0.35),
+        var(--shadow-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card.face-down span {
+    font-family: var(--font-display);
+    font-size: 34px;
+    color: rgba(212, 175, 55, 0.5);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* ---- 3D table cards (keyed reconciler) ---- */
+
+.card.card3 {
+    background: transparent;
+    box-shadow: none;
+    animation: none;
+    perspective: 700px;
+    transform: perspective(700px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+    transition: transform 180ms var(--ease-smooth);
+}
+
+.card3.tilting {
+    z-index: 3;
+    transform: perspective(700px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) scale(1.05);
+}
+
+.card3 .card-inner {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    transition: transform 560ms var(--ease-back);
+    border-radius: var(--radius-md);
+}
+
+.card3.is-down .card-inner {
+    transform: rotateY(180deg);
+}
+
+.card3 .card-face {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-md);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.card3 .card-front {
+    background: linear-gradient(163deg, var(--card-face-hi) 0%, var(--card-face-lo) 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65),
+        inset 0 0 0 1px rgba(35, 37, 44, 0.06),
+        var(--shadow-card);
+}
+
+.card3 .card-back {
+    transform: rotateY(180deg);
+    background:
+        radial-gradient(80% 60% at 50% 40%, rgba(212, 175, 55, 0.08), transparent 70%),
+        repeating-linear-gradient(45deg, rgba(212, 175, 55, 0.13) 0 1px, transparent 1px 9px),
+        repeating-linear-gradient(-45deg, rgba(212, 175, 55, 0.13) 0 1px, transparent 1px 9px),
+        linear-gradient(163deg, #17301f 0%, var(--card-back-felt) 100%);
+    box-shadow:
+        inset 0 0 0 1px rgba(212, 175, 55, 0.25),
+        inset 0 0 0 5px rgba(7, 9, 8, 0.35),
+        var(--shadow-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card3 .card-back span {
+    font-family: var(--font-display);
+    font-size: 32px;
+    color: rgba(212, 175, 55, 0.45);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.hand.blackjack .card3 .card-front {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65),
+        inset 0 0 0 1px rgba(212, 175, 55, 0.5),
+        0 0 34px -6px var(--gold-glow),
+        var(--shadow-card);
+}
+
+.hand.busted .card3 {
+    filter: saturate(0.55) brightness(0.82);
+}
+
+.deal-fallback {
+    animation: cardDeal 340ms var(--ease-back) backwards;
+}
+
+/* ---- Shoe ---- */
+
+#shoe-anchor {
+    position: absolute;
+    top: 22px;
+    right: 30px;
+    width: 72px;
+    height: 98px;
+    border-radius: 9px;
+    background: linear-gradient(160deg, #1c150e 0%, #0f0b07 100%);
+    border: 1px solid rgba(212, 175, 55, 0.28);
+    box-shadow:
+        inset 0 0 0 4px rgba(7, 9, 8, 0.5),
+        0 12px 20px -10px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
+#shoe-anchor::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    right: 7px;
+    height: 26px;
+    border-radius: 4px;
+    background: repeating-linear-gradient(180deg,
+        var(--card-face-lo) 0 2px,
+        rgba(35, 37, 44, 0.35) 2px 3px);
+    opacity: 0.85;
+}
+
+#shoe-anchor::after {
+    content: "SHOE";
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--font-body);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: rgba(212, 175, 55, 0.4);
+}
+
+/* ---- Loss pulse ---- */
+
+#table-felt.pulse-loss {
+    animation: pulseLoss 480ms var(--ease-smooth);
+}
+
+/* ---- Controls ---- */
+
+#controls {
+    display: flex;
+    justify-content: center;
+    padding-top: 18px;
+    min-height: 76px;
+}
+
+#betting-controls,
+#action-controls,
+#result-controls,
+#insurance-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+#betting-controls input#bet-amount {
+    width: 110px;
+    text-align: center;
+    font-size: 16px;
+}
+
+#round-result {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-right: 14px;
+    animation: resultPop var(--dur-med) var(--ease-back) backwards;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+}
+
+#round-result.win {
+    color: var(--gold-bright);
+    background: linear-gradient(100deg, var(--gold-deep) 15%, var(--gold-bright) 40%, #fff5d6 50%, var(--gold-bright) 60%, var(--gold-deep) 85%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: resultPop var(--dur-med) var(--ease-back) backwards, foilShimmer 2.6s linear 1;
+}
+
+#round-result.lose {
+    color: var(--loss);
+}
+
+#round-result.push {
+    color: var(--ivory-soft);
+}
+
+/* ---- Insurance ---- */
+
+#insurance-controls {
+    flex-direction: column;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--gold-faint);
+    border-radius: var(--radius-lg);
+    padding: 16px 22px;
+    box-shadow: var(--shadow-pop);
+    animation: insurancePulse 2.2s var(--ease-smooth) infinite;
+}
+
+.insurance-question {
+    font-family: var(--font-display);
+    font-size: 18px;
+    color: var(--ivory);
+    letter-spacing: 0.04em;
+}
+
+#insurance-hint {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ivory-mute);
+}
+
+.insurance-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.hint-action.take-insurance {
+    color: var(--gold-bright);
+}
+
+.hint-action.decline-insurance {
+    color: var(--loss);
+}
+
+/* ---- Best play tooltip ---- */
+
+#best-play-tooltip {
+    position: absolute;
+    top: -6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12px;
+    box-shadow: var(--shadow-pop);
+    backdrop-filter: blur(10px);
+    z-index: 5;
+}
+
+#best-play-tooltip .tooltip-action {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+}
+
+#best-play-tooltip .tooltip-reason {
+    color: var(--ivory-mute);
+    max-width: 230px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#best-play-tooltip .tooltip-deviation {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--ink);
+    background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+#best-play-tooltip.has-deviation {
+    border-color: var(--gold-deep);
+    box-shadow: 0 0 24px -6px var(--gold-glow), var(--shadow-pop);
+}
+
+.tooltip-action.action-hit { color: #7fb6d9; }
+.tooltip-action.action-stand { color: var(--loss); }
+.tooltip-action.action-double { color: var(--gold-bright); }
+.tooltip-action.action-split { color: var(--win-green); }
+.tooltip-action.action-surrender { color: #b49ad9; }
+
+/* ---- Betting hint ---- */
+
+#betting-hint {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-left: 3px solid var(--ivory-mute);
+    border-radius: var(--radius-md);
+    padding: 8px 14px;
+    font-size: 12px;
+    backdrop-filter: blur(10px);
+}
+
+#betting-hint .hint-recommendation {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+#betting-hint .hint-units {
+    font-weight: 600;
+    color: var(--ivory);
+    letter-spacing: 0.03em;
+}
+
+#betting-hint .hint-edge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ivory-mute);
+}
+
+#betting-hint .hint-count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ivory-mute);
+    border-left: 1px solid var(--panel-hairline);
+    padding-left: 14px;
+}
+
+#betting-hint .hint-count span {
+    color: var(--gold-bright);
+    font-weight: 600;
+}
+
+#betting-hint.advantage-negative { border-left-color: var(--loss-deep); }
+#betting-hint.advantage-breakeven { border-left-color: var(--ivory-mute); }
+#betting-hint.advantage-positive { border-left-color: var(--gold-deep); }
+#betting-hint.advantage-strong {
+    border-left-color: var(--gold);
+    box-shadow: 0 0 26px -8px var(--gold-glow);
+}

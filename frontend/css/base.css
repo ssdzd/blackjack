@@ -1,0 +1,327 @@
+/**
+ * Base shell: reset, typography, header / main / footer layout
+ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    min-height: 100vh;
+    background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(212, 175, 55, 0.05), transparent 60%),
+        radial-gradient(900px 500px at 85% 110%, rgba(29, 58, 42, 0.35), transparent 60%),
+        var(--room);
+    color: var(--ivory-soft);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+::selection {
+    background: var(--gold-deep);
+    color: var(--ivory);
+}
+
+/* Scrollbars */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(212, 175, 55, 0.25) transparent;
+}
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+    background: rgba(212, 175, 55, 0.25);
+    border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* Focus visibility */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
+
+/* ---- Header ---- */
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 4px 14px;
+    border-bottom: 1px solid var(--panel-hairline);
+}
+
+header h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ivory);
+    white-space: nowrap;
+}
+
+header h1::before {
+    content: "♠ ";
+    color: var(--gold);
+    letter-spacing: 0;
+}
+
+header h1::after {
+    content: " ♦";
+    color: var(--card-red);
+    letter-spacing: 0;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+#bankroll {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--ivory-mute);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 7px 16px;
+    box-shadow: var(--shadow-pop);
+}
+
+#bankroll-amount {
+    color: var(--gold-bright);
+    font-weight: 600;
+    font-size: 16px;
+}
+
+/* ---- Main layout ---- */
+
+main {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
+    gap: 20px;
+    padding: 20px 0;
+    min-height: 0;
+}
+
+#game-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    position: relative;
+}
+
+/* ---- Side panel ---- */
+
+#stats-panel {
+    width: 280px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(14px);
+    padding: 18px 18px 16px;
+    position: sticky;
+    top: 16px;
+    z-index: var(--z-panel);
+}
+
+#stats-panel h3 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ivory-mute);
+    margin: 18px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--panel-hairline);
+}
+
+#stats-panel h3:first-child {
+    margin-top: 0;
+}
+
+#hands-played,
+#win-rate,
+#net-result,
+#count-section > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+    color: var(--ivory-mute);
+    padding: 3px 0;
+}
+
+#hands-played > span,
+#win-rate > span,
+#net-result > span,
+#count-section > div > span {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    color: var(--ivory);
+}
+
+#running-count span,
+#true-count span {
+    color: var(--gold-bright);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+#cards-remaining span {
+    color: var(--ivory-soft);
+}
+
+#count-section {
+    transition: filter var(--dur-med) var(--ease-smooth);
+}
+
+#count-section.blurred > div > span {
+    filter: blur(9px);
+    user-select: none;
+}
+
+.toggle-btn {
+    font-family: var(--font-body);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ivory-mute);
+    background: transparent;
+    border: 1px solid var(--field-border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all var(--dur-fast) var(--ease-smooth);
+}
+
+.toggle-btn:hover {
+    color: var(--gold-bright);
+    border-color: var(--gold-deep);
+}
+
+.hint-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.hint-toggles label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ivory-mute);
+    cursor: pointer;
+}
+
+.hint-toggles input[type="checkbox"] {
+    accent-color: var(--gold);
+}
+
+.stats-actions {
+    margin-top: 16px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* ---- Footer ---- */
+
+footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 4px 16px;
+    border-top: 1px solid var(--panel-hairline);
+}
+
+footer nav {
+    display: flex;
+    gap: 4px;
+}
+
+footer nav a {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ivory-mute);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    transition: color var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth);
+}
+
+footer nav a:hover {
+    color: var(--ivory);
+}
+
+footer nav a.active {
+    color: var(--gold-bright);
+    border-color: var(--gold-faint);
+    background: rgba(212, 175, 55, 0.06);
+}
+
+.keyboard-hints {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--ivory-mute);
+}
+
+.keyboard-hints kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ivory-soft);
+    background: var(--panel-solid);
+    border: 1px solid var(--field-border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-right: 2px;
+}
