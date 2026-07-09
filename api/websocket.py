@@ -23,20 +23,24 @@ Server -> client:
 """
 
 import asyncio
+from datetime import date
 from decimal import Decimal
+from random import Random
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
 import json
 
 from api.game_session import (
+    DailyRun,
     RULE_PRESETS,
     TrainingGameSession,
     VISIBILITY_MODES,
     COUNTING_SYSTEMS,
 )
-from api.progression_store import progress
+from api.progression_store import load_profile, progress
 from api.routes.stats import record_stat_for_session
 from core.game.events import GameEvent, EventType
+from core.progression.daily import challenge_for_date, score_daily, share_payload
 
 router = APIRouter()
 
@@ -194,6 +198,70 @@ async def _push_progression(
         })
 
 
+async def _finalize_daily(session_id: str, session: TrainingGameSession) -> None:
+    """Score a finished daily run, record it, and notify the client."""
+    run = session.daily_run
+    if run is None or run.done:
+        return
+    run.done = True
+
+    net = float(session.game.player.bankroll) - float(run.challenge.bankroll)
+    score = score_daily(run.decisions, run.checkins, net)
+    share = share_payload(run.challenge, score, run.round_results)
+
+    await _push_progression(
+        session_id, session, "daily_complete",
+        {
+            "date": run.challenge.date,
+            "score": score.score,
+            "grade": score.grade,
+            "decisions_pct": score.decisions_pct,
+            "counts_pct": score.counts_pct,
+            "net": net,
+        },
+    )
+
+    await manager.send_message(session_id, {
+        "type": "daily_complete",
+        "number": run.challenge.number,
+        "date": run.challenge.date,
+        "score": score.score,
+        "grade": score.grade,
+        "breakdown": score.breakdown,
+        "decisions_pct": score.decisions_pct,
+        "counts_pct": score.counts_pct,
+        "net": net,
+        "round_results": run.round_results,
+        **share,
+    })
+
+
+async def _daily_round_ended(session_id: str, session: TrainingGameSession) -> None:
+    """Advance daily bookkeeping after a round resolves."""
+    run = session.daily_run
+    if run is None or run.done:
+        return
+
+    run.close_round()
+
+    await manager.send_message(session_id, {
+        "type": "daily_progress",
+        "round": run.rounds_played,
+        "rounds": run.challenge.rounds,
+    })
+
+    if run.rounds_played in run.challenge.checkin_rounds:
+        run.awaiting_checkin = True
+        await manager.send_message(session_id, {
+            "type": "count_checkin_request",
+            "round": run.rounds_played,
+        })
+
+    game_over = session.game.state.name == "GAME_OVER"
+    if (run.rounds_finished or game_over) and not run.awaiting_checkin:
+        await _finalize_daily(session_id, session)
+
+
 def _grade_to_event(grade) -> tuple[str, dict[str, Any]]:
     """Translate a DecisionGrade into a progression event."""
     if grade.kind == "action":
@@ -240,6 +308,7 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                         session_id, session, "round",
                         {"result": (session.last_round_result or {}).get("result", 0)},
                     )
+                    await _daily_round_ended(session_id, session)
             else:
                 await asyncio.sleep(0.01)
 
@@ -285,6 +354,44 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                     "state": session.state_payload(),
                 })
 
+            elif msg_type == "start_daily":
+                today = date.today()
+                challenge = challenge_for_date(today)
+
+                # One attempt per day per profile
+                if session.profile_id:
+                    profile = await load_profile(session.profile_id)
+                    if profile and challenge.date in profile.daily:
+                        await manager.send_message(session_id, {
+                            "type": "error",
+                            "message": "You already played today's daily. Come back tomorrow.",
+                        })
+                        continue
+
+                session = manager.reset_session(
+                    session_id,
+                    rules=challenge.rules,
+                    initial_bankroll=Decimal(challenge.bankroll),
+                    counting_system="hilo",
+                    visibility="hidden",
+                    rng=Random(challenge.seed),
+                )
+                session.daily_run = DailyRun(challenge=challenge)
+
+                await manager.send_message(session_id, {
+                    "type": "daily_started",
+                    "number": challenge.number,
+                    "date": challenge.date,
+                    "rounds": challenge.rounds,
+                    "checkin_rounds": list(challenge.checkin_rounds),
+                    "min_bet": challenge.min_bet,
+                    "max_bet": challenge.max_bet,
+                })
+                await manager.send_message(session_id, {
+                    "type": "state_update",
+                    "state": session.state_payload(),
+                })
+
             elif msg_type == "reveal_count":
                 await manager.send_message(session_id, {
                     "type": "count_reveal",
@@ -309,14 +416,30 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                     session_id, session, "checkin",
                     {"exact": result["correct"], "close": result["close"]},
                 )
+                run = session.daily_run
+                if run and run.awaiting_checkin and not run.done:
+                    run.checkins.append(bool(result["correct"]))
+                    run.awaiting_checkin = False
+                    if run.rounds_finished or session.game.state.name == "GAME_OVER":
+                        await _finalize_daily(session_id, session)
 
             elif msg_type == "bet":
                 amount = message.get("amount", 0)
                 rules = session.rules
-                if amount < rules.min_bet or amount > rules.max_bet:
+                min_bet, max_bet = rules.min_bet, rules.max_bet
+                if session.daily_run and not session.daily_run.done:
+                    if session.daily_run.rounds_finished:
+                        await manager.send_message(session_id, {
+                            "type": "error",
+                            "message": "The daily is over — answer the final count check-in.",
+                        })
+                        continue
+                    min_bet = session.daily_run.challenge.min_bet
+                    max_bet = session.daily_run.challenge.max_bet
+                if amount < min_bet or amount > max_bet:
                     await manager.send_message(session_id, {
                         "type": "error",
-                        "message": f"Bet must be between ${rules.min_bet} and ${rules.max_bet}",
+                        "message": f"Bet must be between ${min_bet} and ${max_bet}",
                     })
                     continue
 
@@ -366,6 +489,8 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                         "type": "decision_result",
                         "grade": grade.to_dict(),
                     })
+                    if session.daily_run and not session.daily_run.done:
+                        session.daily_run.record_decision(grade.is_correct)
                     event_type, payload = _grade_to_event(grade)
                     payload["visibility"] = session.visibility
                     await _push_progression(session_id, session, event_type, payload)
@@ -389,6 +514,8 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                         "type": "decision_result",
                         "grade": grade.to_dict(),
                     })
+                    if session.daily_run and not session.daily_run.done:
+                        session.daily_run.record_decision(grade.is_correct)
                     event_type, payload = _grade_to_event(grade)
                     await _push_progression(session_id, session, event_type, payload)
 

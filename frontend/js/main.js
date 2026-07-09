@@ -3,6 +3,7 @@
  */
 
 import { appState } from './state.js';
+import { onEnter, switchMode } from './nav.js';
 import { initTable, statsTracker, resetGame, revealCount, configureSession } from './screens/table.js';
 import { initStrategyChart } from './screens/strategy-chart.js';
 import { initDrills } from './screens/drills.js';
@@ -10,63 +11,27 @@ import { initStrategyDrill } from './screens/strategy-drill.js';
 import { initPerformance, refreshPerformanceStats } from './screens/performance.js';
 import { initSettings } from './screens/settings.js';
 import { initProfile, showProfile } from './screens/profile.js';
+import { initDaily, showDaily } from './screens/daily.js';
 import { ensureProfile } from './progression.js';
 import { armSound, isMuted, setMuted } from './juice/sound.js';
 
 function setupNavigation() {
-    document.getElementById('nav-play').addEventListener('click', (e) => {
-        e.preventDefault();
-        switchMode('play');
-    });
+    const routes = ['play', 'count-drill', 'strategy-drill', 'daily', 'performance', 'profile'];
+    for (const mode of routes) {
+        document.getElementById(`nav-${mode}`)?.addEventListener('click', (e) => {
+            e.preventDefault();
+            switchMode(mode);
+        });
+    }
 
-    document.getElementById('nav-count-drill').addEventListener('click', (e) => {
-        e.preventDefault();
-        switchMode('count-drill');
-    });
-
-    document.getElementById('nav-strategy-drill').addEventListener('click', (e) => {
-        e.preventDefault();
-        switchMode('strategy-drill');
-    });
-
-    document.getElementById('nav-performance')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        switchMode('performance');
-        refreshPerformanceStats();
-    });
-
-    document.getElementById('nav-profile')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        switchMode('profile');
-        showProfile();
-    });
+    onEnter('performance', refreshPerformanceStats);
+    onEnter('profile', showProfile);
+    onEnter('daily', showDaily);
 
     document.getElementById('nav-settings')?.addEventListener('click', (e) => {
         e.preventDefault();
-        toggleSettings();
+        document.getElementById('settings-panel')?.classList.toggle('hidden');
     });
-}
-
-function switchMode(mode) {
-    appState.mode = mode;
-
-    // Update nav active states
-    document.querySelectorAll('footer nav a').forEach(a => a.classList.remove('active'));
-    document.getElementById(`nav-${mode === 'play' ? 'play' : mode}`).classList.add('active');
-
-    // Show/hide sections
-    document.getElementById('game-area').classList.toggle('hidden', mode !== 'play');
-    document.getElementById('count-drill-area')?.classList.toggle('hidden', mode !== 'count-drill');
-    document.getElementById('strategy-drill-area')?.classList.toggle('hidden', mode !== 'strategy-drill');
-    document.getElementById('performance-area')?.classList.toggle('hidden', mode !== 'performance');
-    document.getElementById('profile-area')?.classList.toggle('hidden', mode !== 'profile');
-}
-
-function toggleSettings() {
-    const settingsPanel = document.getElementById('settings-panel');
-    if (settingsPanel) {
-        settingsPanel.classList.toggle('hidden');
-    }
 }
 
 function setupCountToggle() {
@@ -104,6 +69,7 @@ function init() {
     initPerformance();
     initSettings();
     initProfile();
+    initDaily();
 
     setupNavigation();
     setupCountToggle();

@@ -492,6 +492,221 @@ span#perf-net-result.negative {
     border-radius: var(--radius-md);
 }
 
+/* ---- Daily challenge ---- */
+
+#daily-banner {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    color: var(--gold-bright);
+    background: var(--panel);
+    border: 1px solid var(--gold-deep);
+    border-radius: 999px;
+    padding: 7px 18px;
+    box-shadow: 0 0 26px -8px var(--gold-glow), var(--shadow-pop);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.daily-card {
+    max-width: 520px;
+    background: rgba(7, 9, 8, 0.4);
+    border: 1px solid var(--gold-faint);
+    border-radius: var(--radius-lg);
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.daily-card-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+}
+
+.daily-number {
+    font-family: var(--font-display);
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--gold-bright);
+}
+
+.daily-date {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ivory-mute);
+}
+
+.daily-rules {
+    font-size: 14px;
+    color: var(--ivory-soft);
+}
+
+.daily-format {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ivory-mute);
+}
+
+.daily-scoring {
+    font-size: 12.5px;
+    color: var(--ivory-mute);
+    border-left: 2px solid var(--gold-deep);
+    padding-left: 12px;
+}
+
+#btn-start-daily {
+    align-self: flex-start;
+    color: #241c07;
+    background: linear-gradient(180deg, #ecd489 0%, #d4af37 55%, #c09a2c 100%);
+    border: 1px solid #8a6f24;
+    text-shadow: 0 1px 0 rgba(255, 248, 220, 0.45);
+}
+
+.daily-attempted-label {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ivory-mute);
+}
+
+.daily-best-score {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--gold-bright);
+}
+
+.daily-next {
+    font-size: 12px;
+    color: var(--ivory-mute);
+}
+
+/* Check-in modal */
+.checkin-content {
+    width: min(400px, calc(100vw - 40px));
+    text-align: center;
+}
+
+.checkin-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold-bright);
+    margin-bottom: 6px;
+}
+
+.checkin-question {
+    color: var(--ivory-soft);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.checkin-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+.checkin-row input {
+    width: 110px;
+    text-align: center;
+    font-size: 18px;
+}
+
+/* Daily result modal */
+.daily-result-content {
+    width: min(460px, calc(100vw - 40px));
+    text-align: center;
+}
+
+.daily-result-header {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--ivory-mute);
+    margin-bottom: 8px;
+}
+
+.daily-score-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 8px;
+    margin: 6px 0 10px;
+}
+
+.daily-score-big {
+    font-family: var(--font-display);
+    font-size: 74px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--gold-bright);
+    background: linear-gradient(100deg, var(--gold-deep) 15%, var(--gold-bright) 45%, #fff5d6 52%, var(--gold-bright) 60%, var(--gold-deep) 85%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: foilShimmer 3s linear 1;
+}
+
+.daily-score-denom {
+    font-family: var(--font-display);
+    font-size: 22px;
+    color: var(--ivory-mute);
+}
+
+.daily-grade-seal {
+    font-family: var(--font-display);
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--gold-bright);
+    border: 2px solid var(--gold-deep);
+    border-radius: 50%;
+    width: 64px;
+    height: 64px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 12px;
+}
+
+.daily-breakdown {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ivory-soft);
+    margin-bottom: 12px;
+}
+
+.daily-grid {
+    font-size: 20px;
+    line-height: 1.35;
+    margin: 0 0 16px;
+    font-family: var(--font-body);
+}
+
+.daily-result-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+#btn-daily-copy {
+    color: #241c07;
+    background: linear-gradient(180deg, #ecd489 0%, #d4af37 55%, #c09a2c 100%);
+    border: 1px solid #8a6f24;
+}
+
 /* ---- XP chip ---- */
 
 #xp-chip {

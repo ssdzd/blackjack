@@ -32,6 +32,7 @@
             <section id="game-area">
                 <div id="table-felt">
                 <div id="shoe-anchor" aria-hidden="true"></div>
+                <div id="daily-banner" class="hidden"></div>
                 <div id="game-message"></div>
 
                 <div id="dealer-area">
@@ -283,6 +284,31 @@
                 <button id="btn-reset-stats" class="btn-small btn-danger">Reset All Stats</button>
             </section>
 
+            <!-- Daily Challenge -->
+            <section id="daily-area" class="drill-area hidden">
+                <h2>Daily Challenge</h2>
+                <p class="drill-description">One seeded shoe. Twenty rounds. The same cards for every player, every day — skill is the only variable.</p>
+
+                <div class="daily-card">
+                    <div class="daily-card-header">
+                        <span id="daily-number" class="daily-number">#1</span>
+                        <span id="daily-date" class="daily-date"></span>
+                    </div>
+                    <div id="daily-rules" class="daily-rules"></div>
+                    <div id="daily-format" class="daily-format"></div>
+                    <div class="daily-scoring">
+                        Scored on decisions (60%), count check-ins (30%), and whether you finish up (10%).
+                        You can lose money and still post an S — play the cards right.
+                    </div>
+                    <button id="btn-start-daily">Deal Me In</button>
+                    <div id="daily-attempted" class="hidden">
+                        <div class="daily-attempted-label">Today's result</div>
+                        <div class="daily-best-score"></div>
+                        <div class="daily-next">A new shoe arrives at midnight.</div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Profile -->
             <section id="profile-area" class="drill-area hidden">
                 <h2>Player Profile</h2>
@@ -353,6 +379,7 @@
         <footer>
             <nav>
                 <a href="#" id="nav-play" class="active">Play</a>
+                <a href="#" id="nav-daily">Daily</a>
                 <a href="#" id="nav-count-drill">Count Drill</a>
                 <a href="#" id="nav-strategy-drill">Strategy Drill</a>
                 <a href="#" id="nav-performance">Performance</a>
@@ -368,6 +395,37 @@
                 <span><kbd>C</kbd> Chart</span>
             </div>
         </footer>
+
+        <!-- Count check-in modal -->
+        <div id="checkin-modal" class="modal hidden">
+            <div class="modal-content checkin-content">
+                <h2 class="checkin-title">Count Check</h2>
+                <p class="checkin-question">What is the running count right now?</p>
+                <div class="checkin-row">
+                    <input type="number" id="checkin-input" step="1" placeholder="0">
+                    <button id="btn-checkin-submit">Lock It In</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Daily result modal -->
+        <div id="daily-result-modal" class="modal hidden">
+            <div class="modal-content daily-result-content">
+                <div class="daily-result-header">Daily Complete</div>
+                <div class="daily-score-line">
+                    <span class="daily-score-big">0</span>
+                    <span class="daily-score-denom">/1000</span>
+                    <span class="daily-grade-seal">—</span>
+                </div>
+                <div class="daily-breakdown"></div>
+                <pre class="daily-grid"></pre>
+                <div class="daily-result-actions">
+                    <button id="btn-daily-copy">Copy Result</button>
+                    <button id="btn-daily-card" class="btn-small">Download Card</button>
+                    <button id="btn-daily-close" class="btn-small">Done</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Settings Panel -->
         <div id="settings-panel" class="modal hidden">

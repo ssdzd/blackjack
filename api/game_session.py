@@ -61,6 +61,41 @@ _ACTION_NAMES = {
 
 
 @dataclass
+class DailyRun:
+    """Live state of a daily-challenge attempt riding on a session."""
+
+    challenge: Any  # core.progression.daily.DailyChallenge
+    decisions: list[bool] = field(default_factory=list)
+    current_round: list[bool] = field(default_factory=list)
+    round_results: list[str] = field(default_factory=list)
+    checkins: list[bool] = field(default_factory=list)
+    rounds_played: int = 0
+    awaiting_checkin: bool = False
+    done: bool = False
+
+    def record_decision(self, correct: bool) -> None:
+        self.decisions.append(correct)
+        self.current_round.append(correct)
+
+    def close_round(self) -> None:
+        """Categorize the finished round for the emoji grid."""
+        if not self.current_round:
+            self.round_results.append("none")
+        elif all(self.current_round):
+            self.round_results.append("perfect")
+        elif any(self.current_round):
+            self.round_results.append("mixed")
+        else:
+            self.round_results.append("wrong")
+        self.current_round = []
+        self.rounds_played += 1
+
+    @property
+    def rounds_finished(self) -> bool:
+        return self.rounds_played >= self.challenge.rounds
+
+
+@dataclass
 class DecisionGrade:
     """Result of grading one player decision."""
 
@@ -131,6 +166,7 @@ class TrainingGameSession:
         self._hole_counted = False
         self.last_round_result: dict[str, Any] | None = None
         self.profile_id: str | None = None
+        self.daily_run: "DailyRun | None" = None
 
         self.game.subscribe(self._on_event)
 

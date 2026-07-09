@@ -138,6 +138,34 @@ async def get_skill_tree(profile_id: str) -> dict[str, Any]:
     return {"nodes": nodes}
 
 
+@router.get("/daily")
+async def daily_meta(profile_id: str | None = None) -> dict[str, Any]:
+    """Today's challenge metadata plus this profile's attempt, if any."""
+    from datetime import date
+
+    from core.progression.daily import challenge_for_date
+
+    challenge = challenge_for_date(date.today())
+    payload: dict[str, Any] = {
+        "date": challenge.date,
+        "number": challenge.number,
+        "rounds": challenge.rounds,
+        "checkin_rounds": list(challenge.checkin_rounds),
+        "min_bet": challenge.min_bet,
+        "max_bet": challenge.max_bet,
+        "bankroll": challenge.bankroll,
+        "rules_summary": "Vegas Strip — 6 decks, S17, DAS, late surrender",
+        "attempted": False,
+        "result": None,
+    }
+    if profile_id:
+        profile = await load_profile(profile_id)
+        if profile and challenge.date in profile.daily:
+            payload["attempted"] = True
+            payload["result"] = profile.daily[challenge.date].model_dump(mode="json")
+    return payload
+
+
 @router.get("/badges")
 async def list_badges() -> dict[str, Any]:
     """The badge book (definitions only; earned state lives on profiles)."""

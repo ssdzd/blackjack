@@ -286,6 +286,12 @@ function connectWebSocket() {
         enqueue({ kind: 'progression', delta: data.delta });
     });
 
+    for (const type of ['daily_started', 'daily_progress', 'count_checkin_request', 'count_checkin_result', 'daily_complete']) {
+        wsClient.on(type, (data) => {
+            dailyListeners.forEach(fn => fn(type, data));
+        });
+    }
+
     wsClient.on('count_reveal', (data) => {
         applyCount(data.count);
         if (data.quant) applyQuant(data.quant);
@@ -305,6 +311,25 @@ function connectWebSocket() {
 /** One-shot count reveal (on_request visibility mode). */
 export function revealCount() {
     wsClient?.send('reveal_count');
+}
+
+// ---- Daily challenge plumbing ----
+
+const dailyListeners = [];
+
+/** Subscribe to daily-challenge messages (started/progress/checkin/complete). */
+export function onDaily(fn) {
+    dailyListeners.push(fn);
+}
+
+export function startDailyRun() {
+    showingResult = false;
+    flushQueue();
+    wsClient?.send('start_daily');
+}
+
+export function sendCountCheckin(runningCount) {
+    wsClient?.send('count_checkin', { running_count: runningCount });
 }
 
 // ---- State application (single source of DOM truth) ----
