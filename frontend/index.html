@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blackjack Trainer</title>
     <link rel="stylesheet" href="/css/styles.css">
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
 <body>
     <div id="app">
         <header>
             <h1>Blackjack Card Counting Trainer</h1>
             <div class="header-actions">
-                <button id="btn-strategy-chart" class="btn-small" onclick="openStrategyChart()">Strategy Chart (C)</button>
+                <button id="btn-strategy-chart" class="btn-small">Strategy Chart (C)</button>
                 <div id="bankroll">Bankroll: $<span id="bankroll-amount">1000</span></div>
             </div>
         </header>
@@ -53,7 +52,7 @@
                             <div class="hint-count">TC: <span>0</span></div>
                         </div>
                         <input type="number" id="bet-amount" value="10" min="10" max="1000" step="10">
-                        <button id="btn-bet" onclick="placeBet()">Place Bet (B)</button>
+                        <button id="btn-bet">Place Bet (B)</button>
                     </div>
 
                     <div id="insurance-controls" class="hidden">
@@ -62,22 +61,22 @@
                             <span id="insurance-hint" class="hidden">TC suggests: <span class="hint-action"></span></span>
                         </div>
                         <div class="insurance-buttons">
-                            <button id="btn-take-insurance" onclick="takeInsurance()">Take Insurance (I)</button>
-                            <button id="btn-decline-insurance" onclick="declineInsurance()">No Insurance (N)</button>
+                            <button id="btn-take-insurance">Take Insurance (I)</button>
+                            <button id="btn-decline-insurance">No Insurance (N)</button>
                         </div>
                     </div>
 
                     <div id="action-controls" class="hidden">
-                        <button id="btn-hit" onclick="playerAction('hit')">Hit (H)</button>
-                        <button id="btn-stand" onclick="playerAction('stand')">Stand (S)</button>
-                        <button id="btn-double" onclick="playerAction('double')">Double (D)</button>
-                        <button id="btn-split" onclick="playerAction('split')">Split (P)</button>
-                        <button id="btn-surrender" onclick="playerAction('surrender')">Surrender (R)</button>
+                        <button id="btn-hit">Hit (H)</button>
+                        <button id="btn-stand">Stand (S)</button>
+                        <button id="btn-double">Double (D)</button>
+                        <button id="btn-split">Split (P)</button>
+                        <button id="btn-surrender">Surrender (R)</button>
                     </div>
 
                     <div id="result-controls" class="hidden">
                         <div id="round-result"></div>
-                        <button id="btn-new-round" onclick="newRound()">New Round (N)</button>
+                        <button id="btn-new-round">New Round (N)</button>
                     </div>
                 </div>
             </section>
@@ -107,13 +106,13 @@
                     </div>
                     <div class="setting">
                         <label>
-                            <input type="checkbox" id="speed-mode" onchange="toggleSpeedMode()">
+                            <input type="checkbox" id="speed-mode">
                             Speed Mode
                         </label>
                     </div>
                 </div>
 
-                <button id="btn-start-drill" onclick="startCountingDrill()">Start Drill</button>
+                <button id="btn-start-drill">Start Drill</button>
 
                 <!-- Speed Drill Timer Display -->
                 <div id="speed-drill-info" class="hidden">
@@ -131,7 +130,7 @@
                 <div id="drill-input-area" class="hidden">
                     <label for="user-count">Your count:</label>
                     <input type="number" id="user-count" step="0.5" placeholder="Enter running count">
-                    <button onclick="submitCount()">Submit</button>
+                    <button id="btn-submit-count">Submit</button>
                 </div>
 
                 <div id="drill-result" class="hidden"></div>
@@ -151,13 +150,13 @@
                 <div class="drill-settings">
                     <div class="setting">
                         <label>
-                            <input type="checkbox" id="include-deviations" onchange="toggleDeviationSettings()">
+                            <input type="checkbox" id="include-deviations">
                             Include Deviations
                         </label>
                     </div>
                     <div class="setting">
                         <label>
-                            <input type="checkbox" id="deviation-focus-mode" onchange="toggleDeviationFocus()">
+                            <input type="checkbox" id="deviation-focus-mode">
                             Deviation Focus (I18/Fab4)
                         </label>
                     </div>
@@ -173,7 +172,7 @@
                     </div>
                 </div>
 
-                <button id="btn-start-strategy" onclick="startStrategyDrill()">New Hand</button>
+                <button id="btn-start-strategy">New Hand</button>
 
                 <div id="strategy-display">
                     <div class="strategy-section">
@@ -194,11 +193,11 @@
                 </div>
 
                 <div id="strategy-actions">
-                    <button class="strategy-action-btn" data-action="hit" onclick="checkStrategyAction('hit')">Hit</button>
-                    <button class="strategy-action-btn" data-action="stand" onclick="checkStrategyAction('stand')">Stand</button>
-                    <button class="strategy-action-btn" data-action="double" onclick="checkStrategyAction('double')">Double</button>
-                    <button class="strategy-action-btn" data-action="split" onclick="checkStrategyAction('split')">Split</button>
-                    <button class="strategy-action-btn" data-action="surrender" onclick="checkStrategyAction('surrender')">Surrender</button>
+                    <button class="strategy-action-btn" data-action="hit">Hit</button>
+                    <button class="strategy-action-btn" data-action="stand">Stand</button>
+                    <button class="strategy-action-btn" data-action="double">Double</button>
+                    <button class="strategy-action-btn" data-action="split">Split</button>
+                    <button class="strategy-action-btn" data-action="surrender">Surrender</button>
                 </div>
 
                 <div id="strategy-result" class="hidden"></div>
@@ -262,8 +261,8 @@
                     <canvas id="drill-chart" width="600" height="200"></canvas>
                 </div>
 
-                <button onclick="refreshPerformanceStats()" class="btn-small">Refresh Stats</button>
-                <button onclick="resetPerformanceStats()" class="btn-small btn-danger">Reset All Stats</button>
+                <button id="btn-refresh-stats" class="btn-small">Refresh Stats</button>
+                <button id="btn-reset-stats" class="btn-small btn-danger">Reset All Stats</button>
             </section>
 
             <!-- Stats Panel -->
@@ -283,17 +282,17 @@
                 <h3>Training Hints</h3>
                 <div class="hint-toggles">
                     <label>
-                        <input type="checkbox" id="toggle-best-play" checked onchange="toggleBestPlayHint()">
+                        <input type="checkbox" id="toggle-best-play" checked>
                         Best Play Tooltip
                     </label>
                     <label>
-                        <input type="checkbox" id="toggle-bet-hints" checked onchange="toggleBetHints()">
+                        <input type="checkbox" id="toggle-bet-hints" checked>
                         Betting Hints
                     </label>
                 </div>
 
                 <div class="stats-actions">
-                    <button onclick="resetGame()" class="btn-small">Reset Session</button>
+                    <button id="btn-reset-session" class="btn-small">Reset Session</button>
                 </div>
             </aside>
         </main>
@@ -321,7 +320,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h2>Basic Strategy Chart</h2>
-                    <button class="modal-close" onclick="closeStrategyChart()">&times;</button>
+                    <button class="modal-close">&times;</button>
                 </div>
                 <div class="chart-tabs">
                     <button class="chart-tab active" data-tab="hard">Hard Totals</button>
@@ -344,15 +343,6 @@
         </div>
     </div>
 
-    <script src="/js/websocket.js"></script>
-    <script src="/js/charts.js"></script>
-    <script src="/js/game.js"></script>
-
-    <script>
-        // Toggle deviations setting visibility
-        document.getElementById('include-deviations')?.addEventListener('change', (e) => {
-            document.querySelector('.deviation-setting')?.classList.toggle('hidden', !e.target.checked);
-        });
-    </script>
+    <script type="module" src="/js/main.js"></script>
 </body>
 </html>

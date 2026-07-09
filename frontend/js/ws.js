@@ -2,7 +2,7 @@
  * WebSocket client for real-time game updates
  */
 
-class GameWebSocket {
+export class GameWebSocket {
     constructor() {
         this.ws = null;
         this.sessionId = null;
@@ -145,63 +145,40 @@ class GameWebSocket {
 }
 
 // Game-specific WebSocket commands
-class BlackjackClient extends GameWebSocket {
-    /**
-     * Place a bet
-     */
+export class BlackjackClient extends GameWebSocket {
     placeBet(amount) {
         this.send('bet', { amount });
     }
 
-    /**
-     * Execute a player action
-     */
     action(action) {
         this.send('action', { action });
     }
 
-    /**
-     * Hit
-     */
     hit() {
         this.action('hit');
     }
 
-    /**
-     * Stand
-     */
     stand() {
         this.action('stand');
     }
 
-    /**
-     * Double down
-     */
     double() {
         this.action('double');
     }
 
-    /**
-     * Split
-     */
     split() {
         this.action('split');
     }
 
-    /**
-     * Surrender
-     */
     surrender() {
         this.action('surrender');
     }
 
-    /**
-     * Request new round
-     */
+    insurance(take) {
+        this.send('insurance', { take });
+    }
+
     newRound() {
         this.send('new_round');
     }
 }
-
-// Export for use in other scripts
-window.BlackjackClient = BlackjackClient;
