@@ -1,4 +1,26 @@
-"""WebSocket connection management with game engine integration."""
+"""WebSocket connection management with server-authoritative game sessions.
+
+Protocol (v2 — strictly additive over v1):
+
+Client -> server:
+- {"type": "bet", "amount": 100}
+- {"type": "action", "action": "hit"|"stand"|"double"|"split"|"surrender"}
+- {"type": "insurance", "take": true|false, "amount"?: 25}
+- {"type": "new_round"}
+- {"type": "reset_game"}
+- {"type": "get_state"}
+- {"type": "configure", "counting_system"?, "visibility"?, "rules_preset"?}
+- {"type": "reveal_count"}                     (on_request visibility)
+- {"type": "count_checkin", "running_count": 3}
+
+Server -> client:
+- {"type": "state_update", "state": {...}}     state has v:2, count/quant/rules
+- {"type": "event", "event_type", "data", "state", ["round_result"]}
+- {"type": "decision_result", "grade": {...}}  graded action/insurance/bet
+- {"type": "count_reveal", "count": {...}, "quant": {...}}
+- {"type": "count_checkin_result", {...}}
+- {"type": "error", "message": "..."}
+"""
 
 import asyncio
 from decimal import Decimal
@@ -6,19 +28,24 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
 import json
 
-from core.game import BlackjackGame
+from api.game_session import (
+    RULE_PRESETS,
+    TrainingGameSession,
+    VISIBILITY_MODES,
+    COUNTING_SYSTEMS,
+)
+from api.routes.stats import record_stat_for_session
 from core.game.events import GameEvent, EventType
-from core.strategy.rules import RuleSet
 
 router = APIRouter()
 
 
 class ConnectionManager:
-    """Manage WebSocket connections and game instances."""
+    """Manage WebSocket connections and training sessions."""
 
     def __init__(self) -> None:
         self._connections: dict[str, WebSocket] = {}
-        self._games: dict[str, BlackjackGame] = {}
+        self._sessions: dict[str, TrainingGameSession] = {}
         self._event_queues: dict[str, asyncio.Queue] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str) -> None:
@@ -31,29 +58,28 @@ class ConnectionManager:
         """Remove a connection."""
         self._connections.pop(session_id, None)
         self._event_queues.pop(session_id, None)
-        # Keep the game for potential reconnection
+        # Keep the session for potential reconnection
 
-    def get_or_create_game(self, session_id: str) -> BlackjackGame:
-        """Get or create a game for the session."""
-        if session_id not in self._games:
-            game = BlackjackGame(
-                rules=RuleSet(),
-                initial_bankroll=Decimal("1000"),
-            )
-            self._games[session_id] = game
-            # Subscribe to all game events
-            game.subscribe(lambda event: self._queue_event(session_id, event))
-        return self._games[session_id]
+    def get_or_create_session(self, session_id: str) -> TrainingGameSession:
+        """Get or create a training session."""
+        if session_id not in self._sessions:
+            self._register_session(session_id, TrainingGameSession())
+        return self._sessions[session_id]
 
-    def reset_game(self, session_id: str) -> BlackjackGame:
-        """Reset the game for a session."""
-        game = BlackjackGame(
-            rules=RuleSet(),
-            initial_bankroll=Decimal("1000"),
-        )
-        self._games[session_id] = game
-        game.subscribe(lambda event: self._queue_event(session_id, event))
-        return game
+    def reset_session(self, session_id: str, **kwargs: Any) -> TrainingGameSession:
+        """Replace the session with a freshly configured one."""
+        old = self._sessions.get(session_id)
+        if old is not None:
+            kwargs.setdefault("counting_system", old.counting_system_name)
+            kwargs.setdefault("visibility", old.visibility)
+        self._register_session(session_id, TrainingGameSession(**kwargs))
+        return self._sessions[session_id]
+
+    def _register_session(self, session_id: str, session: TrainingGameSession) -> None:
+        self._sessions[session_id] = session
+        # The session subscribed its own counter first; the queue handler
+        # runs after it, so serialized states already include the count.
+        session.game.subscribe(lambda event: self._queue_event(session_id, event))
 
     def _queue_event(self, session_id: str, event: GameEvent) -> None:
         """Queue an event for async delivery."""
@@ -101,75 +127,15 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _game_state_to_dict(game: BlackjackGame, hide_hole_card: bool = False) -> dict:
-    """Convert game state to a dictionary for JSON serialization."""
-    dealer_cards = []
-    for i, card in enumerate(game.dealer_hand.cards):
-        if hide_hole_card and i == 1:
-            dealer_cards.append({"rank": "?", "suit": "?", "value": 0, "hidden": True})
-        else:
-            dealer_cards.append({
-                "rank": str(card.rank),
-                "suit": str(card.suit),
-                "value": card.value,
-                "hidden": False,
-            })
-
-    player_hands = []
-    for hand in game.player.hands:
-        player_hands.append({
-            "cards": [
-                {"rank": str(c.rank), "suit": str(c.suit), "value": c.value}
-                for c in hand.cards
-            ],
-            "value": hand.value,
-            "is_soft": hand.is_soft,
-            "is_blackjack": hand.is_blackjack,
-            "is_busted": hand.is_busted,
-            "bet": hand.bet,
-        })
-
-    # Calculate dealer showing value
-    dealer_showing = None
-    if game.dealer_hand.cards and not hide_hole_card:
-        dealer_showing = game.dealer_hand.value
-    elif game.dealer_hand.cards:
-        dealer_showing = game.dealer_hand.cards[0].value
-
-    return {
-        "state": game.state.name,
-        "player_hands": player_hands,
-        "current_hand_index": game.player.current_hand_index,
-        "dealer_hand": {
-            "cards": dealer_cards,
-            "value": dealer_showing if not hide_hole_card else None,
-        },
-        "dealer_showing": dealer_showing,
-        "bankroll": float(game.player.bankroll),
-        "can_hit": game.can_hit,
-        "can_stand": game.can_stand,
-        "can_double": game.can_double,
-        "can_split": game.can_split,
-        "can_surrender": game.can_surrender,
-        "can_insure": game.can_insure,
-        "insurance_bet": float(game.player.insurance_bet),
-        "shoe_cards_remaining": game.shoe.cards_remaining,
-        "shoe_decks_remaining": round(game.shoe.cards_remaining / 52, 2),
-    }
-
-
-def _event_to_message(event: GameEvent, game: BlackjackGame) -> dict[str, Any]:
+def _event_to_message(event: GameEvent, session: TrainingGameSession) -> dict[str, Any]:
     """Convert a game event to a WebSocket message."""
-    hide_hole = game.state.name in ("PLAYER_TURN", "OFFERING_INSURANCE")
-
     base_message = {
         "type": "event",
         "event_type": event.event_type.name,
         "data": event.data,
-        "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+        "state": session.state_payload(),
     }
 
-    # Add specific fields based on event type
     if event.event_type == EventType.ROUND_ENDED:
         base_message["round_result"] = {
             "net_result": event.data.get("result", 0),
@@ -179,31 +145,39 @@ def _event_to_message(event: GameEvent, game: BlackjackGame) -> dict[str, Any]:
     return base_message
 
 
+async def _record_round(session_id: str, session: TrainingGameSession) -> None:
+    """Persist a finished round into performance stats (server-side)."""
+    info = session.last_round_result
+    if not info:
+        return
+    result = info.get("result", 0) or 0
+    if result > 0:
+        stat_type = "hand_blackjack" if info.get("player_blackjack") else "hand_win"
+    elif result < 0:
+        stat_type = "hand_loss"
+    else:
+        stat_type = "hand_push"
+    try:
+        await record_stat_for_session(
+            session_id,
+            stat_type,
+            value=abs(result),
+            details={"bankroll": info.get("bankroll", 0)},
+        )
+    except Exception:
+        pass  # Stats persistence must never break gameplay
+
+
 @router.websocket("/game/{session_id}")
 async def game_websocket(websocket: WebSocket, session_id: str) -> None:
-    """
-    WebSocket endpoint for real-time game updates.
-
-    Messages from client:
-    - {"type": "bet", "amount": 100}
-    - {"type": "action", "action": "hit"|"stand"|"double"|"split"|"surrender"}
-    - {"type": "new_round"}
-    - {"type": "reset_game"}
-    - {"type": "get_state"}
-
-    Messages to client:
-    - {"type": "state_update", "state": {...}}
-    - {"type": "event", "event_type": "...", "data": {...}, "state": {...}}
-    - {"type": "error", "message": "..."}
-    """
+    """WebSocket endpoint for real-time game updates (see module docstring)."""
     await manager.connect(websocket, session_id)
-    game = manager.get_or_create_game(session_id)
+    session = manager.get_or_create_session(session_id)
 
     # Send initial state
-    hide_hole = game.state.name == "PLAYER_TURN"
     await manager.send_message(session_id, {
         "type": "state_update",
-        "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+        "state": session.state_payload(),
     })
 
     async def process_events():
@@ -211,8 +185,10 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
         while True:
             event = await manager.get_event(session_id)
             if event:
-                message = _event_to_message(event, game)
+                message = _event_to_message(event, session)
                 await manager.send_message(session_id, message)
+                if event.event_type == EventType.ROUND_ENDED:
+                    await _record_round(session_id, session)
             else:
                 await asyncio.sleep(0.01)
 
@@ -226,30 +202,83 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
             msg_type = message.get("type")
 
             if msg_type == "get_state":
-                hide_hole = game.state.name == "PLAYER_TURN"
                 await manager.send_message(session_id, {
                     "type": "state_update",
-                    "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+                    "state": session.state_payload(),
+                })
+
+            elif msg_type == "configure":
+                system = message.get("counting_system")
+                visibility = message.get("visibility")
+                preset = message.get("rules_preset")
+
+                if preset is not None and preset in RULE_PRESETS:
+                    session = manager.reset_session(
+                        session_id,
+                        rules=RULE_PRESETS[preset](),
+                        counting_system=message.get(
+                            "counting_system", session.counting_system_name
+                        ),
+                        visibility=message.get("visibility", session.visibility),
+                    )
+                else:
+                    if system in COUNTING_SYSTEMS:
+                        session.set_counting_system(system)
+                    if visibility in VISIBILITY_MODES:
+                        session.visibility = visibility
+
+                await manager.send_message(session_id, {
+                    "type": "state_update",
+                    "state": session.state_payload(),
+                })
+
+            elif msg_type == "reveal_count":
+                await manager.send_message(session_id, {
+                    "type": "count_reveal",
+                    "count": session.count_payload(),
+                    "quant": session.quant_snapshot(),
+                })
+
+            elif msg_type == "count_checkin":
+                answer = message.get("running_count")
+                if answer is None:
+                    await manager.send_message(session_id, {
+                        "type": "error",
+                        "message": "count_checkin requires running_count",
+                    })
+                    continue
+                result = session.grade_count_checkin(float(answer))
+                await manager.send_message(session_id, {
+                    "type": "count_checkin_result",
+                    **result,
                 })
 
             elif msg_type == "bet":
                 amount = message.get("amount", 0)
-                if amount < 10 or amount > 1000:
+                rules = session.rules
+                if amount < rules.min_bet or amount > rules.max_bet:
                     await manager.send_message(session_id, {
                         "type": "error",
-                        "message": "Bet must be between $10 and $1000",
+                        "message": f"Bet must be between ${rules.min_bet} and ${rules.max_bet}",
                     })
                     continue
 
-                success = game.bet(int(amount))
+                grade = session.grade_bet(int(amount))
+                success = session.game.bet(int(amount))
                 if not success:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": "Cannot place bet in current state",
                     })
+                elif grade:
+                    await manager.send_message(session_id, {
+                        "type": "decision_result",
+                        "grade": grade.to_dict(),
+                    })
 
             elif msg_type == "action":
                 action = message.get("action")
+                game = session.game
                 actions = {
                     "hit": game.hit,
                     "stand": game.stand,
@@ -266,42 +295,51 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                     })
                     continue
 
+                grade = session.grade_action(action)
                 success = action_fn()
                 if not success:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": f"Cannot {action} now",
                     })
+                elif grade:
+                    await manager.send_message(session_id, {
+                        "type": "decision_result",
+                        "grade": grade.to_dict(),
+                    })
 
             elif msg_type == "insurance":
-                # Handle insurance decision
                 take_insurance = message.get("take", False)
+                grade = session.grade_insurance(bool(take_insurance))
                 if take_insurance:
                     amount = message.get("amount")  # Optional, defaults to half bet
-                    success = game.take_insurance(amount)
+                    success = session.game.take_insurance(amount)
                 else:
-                    success = game.decline_insurance()
+                    success = session.game.decline_insurance()
 
                 if not success:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": "Cannot make insurance decision now",
                     })
+                else:
+                    await manager.send_message(session_id, {
+                        "type": "decision_result",
+                        "grade": grade.to_dict(),
+                    })
 
             elif msg_type == "new_round":
                 # Game auto-transitions to WAITING_FOR_BET after ROUND_COMPLETE
-                # Just send current state
-                hide_hole = game.state.name == "PLAYER_TURN"
                 await manager.send_message(session_id, {
                     "type": "state_update",
-                    "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+                    "state": session.state_payload(),
                 })
 
             elif msg_type == "reset_game":
-                game = manager.reset_game(session_id)
+                session = manager.reset_session(session_id, rules=session.rules)
                 await manager.send_message(session_id, {
                     "type": "state_update",
-                    "state": _game_state_to_dict(game),
+                    "state": session.state_payload(),
                 })
 
             else:

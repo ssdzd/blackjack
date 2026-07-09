@@ -199,67 +199,71 @@ async def get_performance_stats(session_id: str) -> PerformanceStats:
     return await _get_or_create_performance_stats(session_id)
 
 
-@router.post("/performance/{session_id}/record")
-async def record_stat(
-    session_id: str,
-    request: RecordStatRequest,
+def apply_stat(
+    stats: PerformanceStats,
+    stat_type: str,
+    value: float | None = None,
+    correct: bool | None = None,
+    details: dict[str, Any] | None = None,
 ) -> PerformanceStats:
-    """Record a stat entry for a session."""
-    stats = await _get_or_create_performance_stats(session_id)
+    """Apply one stat entry to a PerformanceStats object (pure mutation).
+
+    Shared by the REST record endpoint and the WebSocket layer's automatic
+    round recording.
+    """
     now = int(time.time() * 1000)
 
-    # Update stats based on type
-    if request.stat_type == "hand_win":
+    if stat_type == "hand_win":
         stats.hands_played += 1
         stats.wins += 1
-        if request.value:
-            stats.total_wagered += request.value
-            stats.net_result += request.value
-    elif request.stat_type == "hand_loss":
+        if value:
+            stats.total_wagered += value
+            stats.net_result += value
+    elif stat_type == "hand_loss":
         stats.hands_played += 1
         stats.losses += 1
-        if request.value:
-            stats.total_wagered += request.value
-            stats.net_result -= request.value
-    elif request.stat_type == "hand_push":
+        if value:
+            stats.total_wagered += value
+            stats.net_result -= value
+    elif stat_type == "hand_push":
         stats.hands_played += 1
         stats.pushes += 1
-        if request.value:
-            stats.total_wagered += request.value
-    elif request.stat_type == "hand_blackjack":
+        if value:
+            stats.total_wagered += value
+    elif stat_type == "hand_blackjack":
         stats.hands_played += 1
         stats.wins += 1
         stats.blackjacks += 1
-        if request.value:
-            stats.total_wagered += request.value
-            stats.net_result += request.value * 1.5
-    elif request.stat_type == "count_drill":
+        if value:
+            stats.total_wagered += value
+            stats.net_result += value * 1.5
+    elif stat_type == "count_drill":
         stats.count_drills_attempted += 1
-        if request.correct:
+        if correct:
             stats.count_drills_correct += 1
-        if request.value is not None:
+        if value is not None:
             # Update average error
             total_error = stats.count_average_error * (stats.count_drills_attempted - 1)
-            total_error += request.value
+            total_error += value
             stats.count_average_error = total_error / stats.count_drills_attempted
-    elif request.stat_type == "strategy_drill":
+    elif stat_type == "strategy_drill":
         stats.strategy_drills_attempted += 1
-        if request.correct:
+        if correct:
             stats.strategy_drills_correct += 1
-    elif request.stat_type == "deviation_drill":
+    elif stat_type == "deviation_drill":
         stats.deviation_drills_attempted += 1
-        if request.correct:
+        if correct:
             stats.deviation_drills_correct += 1
-    elif request.stat_type == "speed_drill":
+    elif stat_type == "speed_drill":
         stats.speed_drills_attempted += 1
-        if request.correct:
+        if correct:
             stats.speed_drills_correct += 1
-        if request.value is not None:
-            score = int(request.value)
+        if value is not None:
+            score = int(value)
             if score > stats.speed_drill_best_score:
                 stats.speed_drill_best_score = score
-        if request.details and "time_ms" in request.details:
-            time_ms = request.details["time_ms"]
+        if details and "time_ms" in details:
+            time_ms = details["time_ms"]
             if stats.speed_drill_best_time_ms is None or time_ms < stats.speed_drill_best_time_ms:
                 stats.speed_drill_best_time_ms = time_ms
 
@@ -267,17 +271,43 @@ async def record_stat(
     entry = SessionHistoryEntry(
         timestamp=now,
         bankroll=stats.net_result,  # Approximation
-        event_type=request.stat_type,
-        details=request.details,
+        event_type=stat_type,
+        details=details,
     )
     stats.history.append(entry)
     if len(stats.history) > 100:
         stats.history = stats.history[-100:]
 
-    # Save to session store
-    await _save_performance_stats(session_id, stats)
-
     return stats
+
+
+async def record_stat_for_session(
+    session_id: str,
+    stat_type: str,
+    value: float | None = None,
+    correct: bool | None = None,
+    details: dict[str, Any] | None = None,
+) -> PerformanceStats:
+    """Load, apply, and persist one stat entry for a session."""
+    stats = await _get_or_create_performance_stats(session_id)
+    apply_stat(stats, stat_type, value=value, correct=correct, details=details)
+    await _save_performance_stats(session_id, stats)
+    return stats
+
+
+@router.post("/performance/{session_id}/record")
+async def record_stat(
+    session_id: str,
+    request: RecordStatRequest,
+) -> PerformanceStats:
+    """Record a stat entry for a session."""
+    return await record_stat_for_session(
+        session_id,
+        request.stat_type,
+        value=request.value,
+        correct=request.correct,
+        details=request.details,
+    )
 
 
 @router.delete("/performance/{session_id}")
