@@ -18,6 +18,7 @@ import { getBestPlay, getActionClass, ACTION_NAMES } from '../strategy-data.js';
 import { refreshChartHighlight } from './strategy-chart.js';
 import { syncTable, initCardTilt } from '../components/cards3d.js';
 import { initHud, updateHud, applyCount, applyQuant, pushBankrollPoint, resetSparkline } from '../components/hud.js';
+import { handleProgressionDelta } from '../progression.js';
 import { wait } from '../juice/tween.js';
 import { addShake, SHAKE } from '../juice/shake.js';
 import { burstAt, sparkBurst } from '../juice/particles.js';
@@ -78,6 +79,11 @@ async function playbackStep(item) {
 
     if (item.kind === 'grade') {
         showDecisionFeedback(item.grade);
+        return;
+    }
+
+    if (item.kind === 'progression') {
+        handleProgressionDelta(item.delta);
         return;
     }
 
@@ -274,6 +280,10 @@ function connectWebSocket() {
 
     wsClient.on('decision_result', (data) => {
         enqueue({ kind: 'grade', grade: data.grade });
+    });
+
+    wsClient.on('progression', (data) => {
+        enqueue({ kind: 'progression', delta: data.delta });
     });
 
     wsClient.on('count_reveal', (data) => {

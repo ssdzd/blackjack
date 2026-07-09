@@ -130,6 +130,7 @@ class TrainingGameSession:
 
         self._hole_counted = False
         self.last_round_result: dict[str, Any] | None = None
+        self.profile_id: str | None = None
 
         self.game.subscribe(self._on_event)
 

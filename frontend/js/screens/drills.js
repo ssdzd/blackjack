@@ -4,6 +4,7 @@
 
 import { apiPost, getSessionId } from '../api.js';
 import { renderCard } from '../components/cards.js';
+import { refreshProfile } from '../progression.js';
 
 let currentDrill = null;
 let drillCardIndex = 0;
@@ -162,6 +163,7 @@ async function submitCount() {
                     </div>`;
 
                 saveHighScore(result.score, result.completion_time_ms, currentDrill.num_cards);
+                refreshProfile({ celebrate: true });
             } else {
                 resultEl.innerHTML = `
                     <div class="speed-result-incorrect">
@@ -192,6 +194,7 @@ async function submitCount() {
             } else {
                 resultEl.innerHTML = `<span class="incorrect">Incorrect.</span> Your answer: ${userCount}, Actual: ${result.actual_count}`;
             }
+            refreshProfile({ celebrate: true });
 
             document.getElementById('user-count').value = '';
         } catch (error) {

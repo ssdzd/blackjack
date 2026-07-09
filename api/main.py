@@ -10,7 +10,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from api.routes import game, training, stats
+from api.routes import game, training, stats, progression
 from api.websocket import router as ws_router
 from config import config
 
@@ -60,6 +60,7 @@ async def health_check(request: Request) -> dict[str, str]:
 app.include_router(game.router, prefix="/api/game", tags=["game"])
 app.include_router(training.router, prefix="/api/training", tags=["training"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.include_router(progression.router, prefix="/api/progression", tags=["progression"])
 app.include_router(ws_router, prefix="/ws", tags=["websocket"])
 
 # Mount static files (must be last since it's a catch-all)

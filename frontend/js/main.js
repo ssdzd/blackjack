@@ -3,12 +3,14 @@
  */
 
 import { appState } from './state.js';
-import { initTable, statsTracker, resetGame, revealCount } from './screens/table.js';
+import { initTable, statsTracker, resetGame, revealCount, configureSession } from './screens/table.js';
 import { initStrategyChart } from './screens/strategy-chart.js';
 import { initDrills } from './screens/drills.js';
 import { initStrategyDrill } from './screens/strategy-drill.js';
 import { initPerformance, refreshPerformanceStats } from './screens/performance.js';
 import { initSettings } from './screens/settings.js';
+import { initProfile, showProfile } from './screens/profile.js';
+import { ensureProfile } from './progression.js';
 import { armSound, isMuted, setMuted } from './juice/sound.js';
 
 function setupNavigation() {
@@ -33,6 +35,12 @@ function setupNavigation() {
         refreshPerformanceStats();
     });
 
+    document.getElementById('nav-profile')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchMode('profile');
+        showProfile();
+    });
+
     document.getElementById('nav-settings')?.addEventListener('click', (e) => {
         e.preventDefault();
         toggleSettings();
@@ -51,6 +59,7 @@ function switchMode(mode) {
     document.getElementById('count-drill-area')?.classList.toggle('hidden', mode !== 'count-drill');
     document.getElementById('strategy-drill-area')?.classList.toggle('hidden', mode !== 'strategy-drill');
     document.getElementById('performance-area')?.classList.toggle('hidden', mode !== 'performance');
+    document.getElementById('profile-area')?.classList.toggle('hidden', mode !== 'profile');
 }
 
 function toggleSettings() {
@@ -94,6 +103,7 @@ function init() {
     initStrategyDrill();
     initPerformance();
     initSettings();
+    initProfile();
 
     setupNavigation();
     setupCountToggle();
@@ -101,6 +111,11 @@ function init() {
 
     document.getElementById('btn-reset-session')?.addEventListener('click', resetGame);
     document.getElementById('btn-reveal-count')?.addEventListener('click', revealCount);
+
+    // Attach the player profile to the live game session
+    ensureProfile()
+        .then(profile => configureSession({ profile_id: profile.profile_id }))
+        .catch(err => console.error('Profile init failed:', err));
 }
 
 init();

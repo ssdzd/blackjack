@@ -4,9 +4,30 @@
 
 import { apiPost } from '../api.js';
 import { renderCard } from '../components/cards.js';
+import { getProfileId, handleProgressionDelta } from '../progression.js';
 
 let currentStrategyDrill = null;
 let deviationFocusMode = false;
+
+async function reportDrillResult(isCorrect) {
+    const profileId = getProfileId();
+    if (!profileId || !currentStrategyDrill) return;
+    const isDeviation = !!currentStrategyDrill.is_deviation_drill;
+    try {
+        const delta = await apiPost(
+            `/api/progression/profile/${profileId}/drill-event`,
+            {
+                drill_key: isDeviation ? 'deviation' : 'strategy',
+                correct: isCorrect,
+                fab4: isDeviation
+                    && (currentStrategyDrill.deviation_action || '').toUpperCase() === 'SURRENDER',
+            }
+        );
+        handleProgressionDelta(delta);
+    } catch (err) {
+        console.error('Failed to record drill result:', err);
+    }
+}
 
 export function initStrategyDrill() {
     document.getElementById('btn-start-strategy')?.addEventListener('click', startStrategyDrill);
@@ -118,6 +139,7 @@ function checkStrategyAction(action) {
 
     const correctAction = currentStrategyDrill.correct_action;
     const isCorrect = action.toUpperCase() === correctAction.toUpperCase();
+    reportDrillResult(isCorrect);
 
     // Highlight buttons
     document.querySelectorAll('.strategy-action-btn').forEach(btn => {

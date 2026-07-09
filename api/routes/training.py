@@ -88,6 +88,7 @@ async def counting_drill(
 @router.post("/counting/verify")
 async def verify_count(
     request: CountVerifyRequest,
+    profile_id: Annotated[str | None, Header(alias="X-Profile-ID")] = None,
 ) -> CountVerifyResponse:
     """Verify a user's count."""
     session_data = _drill_sessions.get(request.session_id)
@@ -101,9 +102,20 @@ async def verify_count(
 
     actual = session_data["correct_count"]
     diff = abs(request.user_count - actual)
+    correct = diff < 0.01  # Allow small floating point differences
+
+    from api.progression_store import progress
+
+    drill_key = (
+        "counting" if session_data.get("system", "hilo") in ("hilo", "ko")
+        else "counting-adv"
+    )
+    await progress(
+        profile_id, "drill", {"drill_key": drill_key, "correct": correct}
+    )
 
     return CountVerifyResponse(
-        correct=diff < 0.01,  # Allow small floating point differences
+        correct=correct,
         actual_count=actual,
         difference=diff,
     )
@@ -236,6 +248,7 @@ async def speed_drill(
 @router.post("/counting/speed-drill/verify")
 async def verify_speed_drill(
     request: SpeedDrillVerifyRequest,
+    profile_id: Annotated[str | None, Header(alias="X-Profile-ID")] = None,
 ) -> SpeedDrillVerifyResponse:
     """Verify a speed drill result and calculate score."""
     drill_data = _speed_drills.get(request.drill_id)
@@ -275,6 +288,19 @@ async def verify_speed_drill(
 
     # Clean up drill data after verification
     del _speed_drills[request.drill_id]
+
+    from api.progression_store import progress
+
+    await progress(
+        profile_id,
+        "drill",
+        {
+            "drill_key": "speed",
+            "correct": correct,
+            "num_cards": drill_data["num_cards"],
+            "time_ms": request.completion_time_ms,
+        },
+    )
 
     return SpeedDrillVerifyResponse(
         correct=correct,

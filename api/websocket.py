@@ -34,6 +34,7 @@ from api.game_session import (
     VISIBILITY_MODES,
     COUNTING_SYSTEMS,
 )
+from api.progression_store import progress
 from api.routes.stats import record_stat_for_session
 from core.game.events import GameEvent, EventType
 
@@ -69,10 +70,13 @@ class ConnectionManager:
     def reset_session(self, session_id: str, **kwargs: Any) -> TrainingGameSession:
         """Replace the session with a freshly configured one."""
         old = self._sessions.get(session_id)
+        profile_id = None
         if old is not None:
             kwargs.setdefault("counting_system", old.counting_system_name)
             kwargs.setdefault("visibility", old.visibility)
+            profile_id = old.profile_id
         self._register_session(session_id, TrainingGameSession(**kwargs))
+        self._sessions[session_id].profile_id = profile_id
         return self._sessions[session_id]
 
     def _register_session(self, session_id: str, session: TrainingGameSession) -> None:
@@ -168,6 +172,49 @@ async def _record_round(session_id: str, session: TrainingGameSession) -> None:
         pass  # Stats persistence must never break gameplay
 
 
+async def _push_progression(
+    session_id: str,
+    session: TrainingGameSession,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """Apply a progression event and push the delta if anything happened."""
+    delta = await progress(session.profile_id, event_type, payload)
+    if delta is None:
+        return
+    if (
+        delta.xp_gained > 0
+        or delta.badges_awarded
+        or delta.node_changes
+        or delta.level_up
+    ):
+        await manager.send_message(session_id, {
+            "type": "progression",
+            "delta": delta.model_dump(mode="json"),
+        })
+
+
+def _grade_to_event(grade) -> tuple[str, dict[str, Any]]:
+    """Translate a DecisionGrade into a progression event."""
+    if grade.kind == "action":
+        return "decision", {
+            "correct": grade.is_correct,
+            "is_deviation": grade.is_deviation,
+            "visibility": "always",  # overwritten by caller
+            "fab4": bool(
+                grade.is_deviation
+                and grade.deviation
+                and grade.deviation.get("deviation_action") == "surrender"
+            ),
+        }
+    if grade.kind == "insurance":
+        return "insurance", {
+            "correct": grade.is_correct,
+            "correct_action": grade.correct_action,
+        }
+    return "bet", {"in_band": grade.is_correct}
+
+
 @router.websocket("/game/{session_id}")
 async def game_websocket(websocket: WebSocket, session_id: str) -> None:
     """WebSocket endpoint for real-time game updates (see module docstring)."""
@@ -189,6 +236,10 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                 await manager.send_message(session_id, message)
                 if event.event_type == EventType.ROUND_ENDED:
                     await _record_round(session_id, session)
+                    await _push_progression(
+                        session_id, session, "round",
+                        {"result": (session.last_round_result or {}).get("result", 0)},
+                    )
             else:
                 await asyncio.sleep(0.01)
 
@@ -208,6 +259,8 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                 })
 
             elif msg_type == "configure":
+                if message.get("profile_id"):
+                    session.profile_id = str(message["profile_id"])
                 system = message.get("counting_system")
                 visibility = message.get("visibility")
                 preset = message.get("rules_preset")
@@ -252,6 +305,10 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                     "type": "count_checkin_result",
                     **result,
                 })
+                await _push_progression(
+                    session_id, session, "checkin",
+                    {"exact": result["correct"], "close": result["close"]},
+                )
 
             elif msg_type == "bet":
                 amount = message.get("amount", 0)
@@ -275,6 +332,8 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                         "type": "decision_result",
                         "grade": grade.to_dict(),
                     })
+                    event_type, payload = _grade_to_event(grade)
+                    await _push_progression(session_id, session, event_type, payload)
 
             elif msg_type == "action":
                 action = message.get("action")
@@ -307,6 +366,9 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                         "type": "decision_result",
                         "grade": grade.to_dict(),
                     })
+                    event_type, payload = _grade_to_event(grade)
+                    payload["visibility"] = session.visibility
+                    await _push_progression(session_id, session, event_type, payload)
 
             elif msg_type == "insurance":
                 take_insurance = message.get("take", False)
@@ -327,6 +389,8 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                         "type": "decision_result",
                         "grade": grade.to_dict(),
                     })
+                    event_type, payload = _grade_to_event(grade)
+                    await _push_progression(session_id, session, event_type, payload)
 
             elif msg_type == "new_round":
                 # Game auto-transitions to WAITING_FOR_BET after ROUND_COMPLETE

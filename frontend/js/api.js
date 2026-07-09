@@ -12,10 +12,15 @@ export function getSessionId() {
 }
 
 function headers() {
-    return {
+    const base = {
         'Content-Type': 'application/json',
         'X-Session-ID': getSessionId(),
     };
+    const profileId = localStorage.getItem('profileId');
+    if (profileId) {
+        base['X-Profile-ID'] = profileId;
+    }
+    return base;
 }
 
 export async function apiGet(path) {

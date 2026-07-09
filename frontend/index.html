@@ -15,6 +15,12 @@
         <header>
             <h1>Blackjack Card Counting Trainer</h1>
             <div class="header-actions">
+                <div id="xp-chip" title="">
+                    <span class="xp-level">LV 1</span>
+                    <span class="xp-title">Tourist</span>
+                    <span class="xp-bar"><span class="xp-fill"></span></span>
+                    <span class="xp-pop"></span>
+                </div>
                 <button id="btn-mute" class="btn-small">Sound: On</button>
                 <button id="btn-strategy-chart" class="btn-small">Strategy Chart (C)</button>
                 <div id="bankroll">Bankroll: $<span id="bankroll-amount">1000</span></div>
@@ -277,6 +283,29 @@
                 <button id="btn-reset-stats" class="btn-small btn-danger">Reset All Stats</button>
             </section>
 
+            <!-- Profile -->
+            <section id="profile-area" class="drill-area hidden">
+                <h2>Player Profile</h2>
+                <p class="drill-description">Skill, proven. XP rewards decisions and demonstrated ability — never money won.</p>
+
+                <div class="profile-identity">
+                    <div class="level-ring">
+                        <span id="profile-level">1</span>
+                    </div>
+                    <div class="identity-lines">
+                        <div id="profile-title" class="identity-title">Tourist</div>
+                        <div id="profile-xp" class="identity-xp">0 XP</div>
+                        <div class="identity-streak">Practice streak: <span id="profile-streak">—</span></div>
+                    </div>
+                </div>
+
+                <h3 class="profile-section-title">Badges</h3>
+                <div id="badge-grid"></div>
+
+                <h3 class="profile-section-title">Lifetime</h3>
+                <div id="lifetime-stats" class="stat-card"></div>
+            </section>
+
             <!-- Stats Panel -->
             <aside id="stats-panel">
                 <div id="count-section">
@@ -327,6 +356,7 @@
                 <a href="#" id="nav-count-drill">Count Drill</a>
                 <a href="#" id="nav-strategy-drill">Strategy Drill</a>
                 <a href="#" id="nav-performance">Performance</a>
+                <a href="#" id="nav-profile">Profile</a>
                 <a href="#" id="nav-settings">Settings</a>
             </nav>
             <div class="keyboard-hints">
