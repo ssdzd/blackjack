@@ -1,4 +1,11 @@
-"""Game API endpoints."""
+"""Game API endpoints.
+
+DEPRECATED for gameplay: the web client plays exclusively over the
+WebSocket (api/websocket.py), which adds server-side counting, decision
+grading, quant stats, and progression. This REST router remains for
+programmatic/headless use and existing integrations; it maintains its own
+game instances, separate from WebSocket sessions.
+"""
 
 import time
 from decimal import Decimal

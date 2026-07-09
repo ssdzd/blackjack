@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
+    "pytest-timeout>=2.2.0",
     "hypothesis>=6.92.0",
     "httpx>=0.25.0",
     "mypy>=1.7.0",
