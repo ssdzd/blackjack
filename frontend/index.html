@@ -33,6 +33,14 @@
                 <div id="table-felt">
                 <div id="shoe-anchor" aria-hidden="true"></div>
                 <div id="daily-banner" class="hidden"></div>
+                <div id="venue-banner" class="hidden"></div>
+                <div id="venue-controls">
+                    <div id="heat-meter" class="hidden" title="Heat — how hard the pit is looking at you">
+                        <span class="heat-label">HEAT</span>
+                        <span class="heat-track"><span class="heat-fill"></span></span>
+                    </div>
+                    <button id="btn-leave-venue" class="btn-small hidden">Walk Away</button>
+                </div>
                 <div id="game-message"></div>
 
                 <div id="dealer-area">
@@ -284,6 +292,13 @@
                 <button id="btn-reset-stats" class="btn-small btn-danger">Reset All Stats</button>
             </section>
 
+            <!-- Career -->
+            <section id="career-area" class="drill-area hidden">
+                <h2>Career</h2>
+                <p class="drill-description">From a kitchen table to the high-limit room. Every venue is a real rule set with a real house edge — skill gates open doors, bankroll survival clears them. Watch your heat.</p>
+                <div id="venue-grid"></div>
+            </section>
+
             <!-- Daily Challenge -->
             <section id="daily-area" class="drill-area hidden">
                 <h2>Daily Challenge</h2>
@@ -379,6 +394,7 @@
         <footer>
             <nav>
                 <a href="#" id="nav-play" class="active">Play</a>
+                <a href="#" id="nav-career">Career</a>
                 <a href="#" id="nav-daily">Daily</a>
                 <a href="#" id="nav-count-drill">Count Drill</a>
                 <a href="#" id="nav-strategy-drill">Strategy Drill</a>

@@ -21,7 +21,15 @@ from core.progression.profile import (
     apply_event,
     new_profile,
 )
+from core.progression.heat import (
+    BACKOFF_THRESHOLD,
+    HeatEvent,
+    apply_heat,
+    heat_events,
+    is_backed_off,
+)
 from core.progression.skill_tree import SKILL_TREE, MasteryRule, SkillNode, recompute_tree
+from core.progression.venues import VENUES, Venue, can_enter, gates_met, next_venue_id
 from core.progression.xp import (
     LEVEL_TITLES,
     XP_RULES,
@@ -32,9 +40,19 @@ from core.progression.xp import (
 
 __all__ = [
     "AttemptRecord",
+    "BACKOFF_THRESHOLD",
     "BADGES",
     "BadgeDef",
     "CareerState",
+    "HeatEvent",
+    "VENUES",
+    "Venue",
+    "apply_heat",
+    "can_enter",
+    "gates_met",
+    "heat_events",
+    "is_backed_off",
+    "next_venue_id",
     "LEVEL_TITLES",
     "MasteryRule",
     "NodeState",

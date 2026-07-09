@@ -12,11 +12,12 @@ import { initPerformance, refreshPerformanceStats } from './screens/performance.
 import { initSettings } from './screens/settings.js';
 import { initProfile, showProfile } from './screens/profile.js';
 import { initDaily, showDaily } from './screens/daily.js';
+import { initCareer, showCareer } from './screens/career.js';
 import { ensureProfile } from './progression.js';
 import { armSound, isMuted, setMuted } from './juice/sound.js';
 
 function setupNavigation() {
-    const routes = ['play', 'count-drill', 'strategy-drill', 'daily', 'performance', 'profile'];
+    const routes = ['play', 'career', 'count-drill', 'strategy-drill', 'daily', 'performance', 'profile'];
     for (const mode of routes) {
         document.getElementById(`nav-${mode}`)?.addEventListener('click', (e) => {
             e.preventDefault();
@@ -27,6 +28,7 @@ function setupNavigation() {
     onEnter('performance', refreshPerformanceStats);
     onEnter('profile', showProfile);
     onEnter('daily', showDaily);
+    onEnter('career', showCareer);
 
     document.getElementById('nav-settings')?.addEventListener('click', (e) => {
         e.preventDefault();
@@ -70,6 +72,7 @@ function init() {
     initSettings();
     initProfile();
     initDaily();
+    initCareer();
 
     setupNavigation();
     setupCountToggle();

@@ -250,6 +250,11 @@ def apply_event(
         venue_id = payload.get("venue_id")
         if venue_id and venue_id not in profile.career.completed:
             profile.career.completed.append(venue_id)
+            from core.progression.venues import next_venue_id
+
+            nxt = next_venue_id(venue_id)
+            if nxt and nxt not in profile.career.unlocked:
+                profile.career.unlocked.append(nxt)
 
     # Badges evaluate against the post-event profile
     badges = evaluate_badges(profile, event_type, payload)

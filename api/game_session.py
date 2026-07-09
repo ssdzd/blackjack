@@ -168,6 +168,14 @@ class TrainingGameSession:
         self.profile_id: str | None = None
         self.daily_run: "DailyRun | None" = None
 
+        # Career venue state (None outside career sessions)
+        self.venue: Any = None
+        self.heat: float = 0.0
+        self.max_heat: float = 0.0
+        self.prev_bet: int | None = None
+        self.hands_at_venue: int = 0
+        self.venue_cleared: bool = False
+
         self.game.subscribe(self._on_event)
 
     # ---- Counting ----

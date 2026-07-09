@@ -492,6 +492,213 @@ span#perf-net-result.negative {
     border-radius: var(--radius-md);
 }
 
+/* ---- Career ---- */
+
+#venue-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.venue-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(7, 9, 8, 0.4);
+    border: 1px solid var(--panel-hairline);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    transition: border-color var(--dur-fast) var(--ease-smooth), box-shadow var(--dur-fast) var(--ease-smooth);
+}
+
+.venue-card.open {
+    border-color: var(--gold-faint);
+}
+
+.venue-card.open:hover {
+    border-color: var(--gold-deep);
+    box-shadow: 0 0 32px -14px var(--gold-glow);
+}
+
+.venue-card.completed {
+    border-color: rgba(88, 168, 119, 0.35);
+}
+
+.venue-card.locked {
+    opacity: 0.62;
+}
+
+.venue-card.trap {
+    border-color: rgba(207, 95, 109, 0.35);
+    background:
+        radial-gradient(120% 80% at 80% 0%, rgba(207, 95, 109, 0.08), transparent 60%),
+        rgba(7, 9, 8, 0.4);
+}
+
+.venue-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.venue-name {
+    font-family: var(--font-display);
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--ivory);
+}
+
+.venue-ribbon {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: #0d1f14;
+    background: linear-gradient(180deg, #79c393, #4f9e6b);
+    border-radius: 4px;
+    padding: 3px 8px;
+}
+
+.venue-ribbon.trap-ribbon {
+    color: #2a0d12;
+    background: linear-gradient(180deg, #de8b96, #c25361);
+}
+
+.venue-flavor {
+    font-size: 13px;
+    font-style: italic;
+    font-family: var(--font-display);
+    color: var(--ivory-mute);
+    letter-spacing: 0.02em;
+}
+
+.venue-stats {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ivory-mute);
+}
+
+.venue-edge {
+    color: var(--gold-bright);
+}
+
+.venue-edge.bad {
+    color: var(--loss);
+    font-weight: 700;
+}
+
+.venue-gates {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gate {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    border-radius: 999px;
+    padding: 3px 10px;
+    border: 1px solid var(--panel-hairline);
+}
+
+.gate.met {
+    color: var(--win-green);
+    border-color: rgba(88, 168, 119, 0.4);
+}
+
+.gate.unmet {
+    color: var(--ivory-mute);
+}
+
+.venue-enter {
+    align-self: flex-start;
+    margin-top: 4px;
+}
+
+.venue-card.open .venue-enter {
+    color: #241c07;
+    background: linear-gradient(180deg, #ecd489 0%, #d4af37 55%, #c09a2c 100%);
+    border: 1px solid #8a6f24;
+}
+
+#venue-banner {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    color: var(--gold-bright);
+    background: var(--panel);
+    border: 1px solid var(--gold-deep);
+    border-radius: 999px;
+    padding: 7px 18px;
+    box-shadow: 0 0 26px -8px var(--gold-glow), var(--shadow-pop);
+    z-index: 5;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+#venue-controls {
+    position: absolute;
+    top: 20px;
+    left: 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 6;
+}
+
+#heat-meter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 6px 12px;
+}
+
+.heat-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--ivory-mute);
+}
+
+.heat-track {
+    width: 90px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(243, 236, 221, 0.1);
+    overflow: hidden;
+}
+
+.heat-fill {
+    display: block;
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #8a6f24, #cf5f6d);
+    transition: width 500ms var(--ease-smooth);
+}
+
+#heat-meter.heat-hot {
+    border-color: rgba(207, 95, 109, 0.5);
+    box-shadow: 0 0 22px -8px rgba(207, 95, 109, 0.6);
+}
+
+#heat-meter.heat-hot .heat-label {
+    color: var(--loss);
+}
+
 /* ---- Daily challenge ---- */
 
 #daily-banner {

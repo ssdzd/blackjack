@@ -138,6 +138,36 @@ async def get_skill_tree(profile_id: str) -> dict[str, Any]:
     return {"nodes": nodes}
 
 
+@router.get("/venues/{profile_id}")
+async def list_venues(profile_id: str) -> dict[str, Any]:
+    """The career map: every venue with this profile's access state."""
+    from core.progression.venues import VENUES, can_enter, gates_met
+
+    profile = await get_or_create_profile(profile_id)
+    venues = []
+    for venue in sorted(VENUES.values(), key=lambda v: v.order):
+        venues.append({
+            "id": venue.id,
+            "order": venue.order,
+            "name": venue.name,
+            "flavor": venue.flavor,
+            "rules_summary": venue.rules_summary(),
+            "house_edge_pct": round(venue.house_edge_pct, 2),
+            "buy_in": venue.buy_in,
+            "target": venue.target,
+            "min_bet": venue.rules.min_bet,
+            "max_bet": venue.rules.max_bet,
+            "penetration": venue.penetration,
+            "heat_tolerance": venue.heat_tolerance,
+            "trap": venue.trap,
+            "gates": gates_met(venue, profile),
+            "unlocked": venue.trap or venue.id in profile.career.unlocked,
+            "can_enter": can_enter(venue, profile),
+            "completed": venue.id in profile.career.completed,
+        })
+    return {"venues": venues}
+
+
 @router.get("/daily")
 async def daily_meta(profile_id: str | None = None) -> dict[str, Any]:
     """Today's challenge metadata plus this profile's attempt, if any."""

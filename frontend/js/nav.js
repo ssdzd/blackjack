@@ -6,6 +6,7 @@ import { appState } from './state.js';
 
 const SECTIONS = {
     'play': 'game-area',
+    'career': 'career-area',
     'count-drill': 'count-drill-area',
     'strategy-drill': 'strategy-drill-area',
     'performance': 'performance-area',

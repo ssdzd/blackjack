@@ -292,6 +292,12 @@ function connectWebSocket() {
         });
     }
 
+    for (const type of ['venue_entered', 'heat', 'backed_off', 'venue_complete', 'venue_bust', 'trap_walkaway', 'venue_left']) {
+        wsClient.on(type, (data) => {
+            venueListeners.forEach(fn => fn(type, data));
+        });
+    }
+
     wsClient.on('count_reveal', (data) => {
         applyCount(data.count);
         if (data.quant) applyQuant(data.quant);
@@ -330,6 +336,26 @@ export function startDailyRun() {
 
 export function sendCountCheckin(runningCount) {
     wsClient?.send('count_checkin', { running_count: runningCount });
+}
+
+// ---- Career plumbing ----
+
+const venueListeners = [];
+
+export function onVenue(fn) {
+    venueListeners.push(fn);
+}
+
+export function enterVenue(venueId) {
+    showingResult = false;
+    flushQueue();
+    wsClient?.send('configure', { venue_id: venueId });
+}
+
+export function leaveVenue() {
+    showingResult = false;
+    flushQueue();
+    wsClient?.send('leave_venue');
 }
 
 // ---- State application (single source of DOM truth) ----
