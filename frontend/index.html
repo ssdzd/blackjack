@@ -36,6 +36,10 @@
 
                 <div id="player-area">
                     <h2>Player</h2>
+                    <div id="decision-feedback" class="hidden" aria-live="polite">
+                        <span class="feedback-headline"></span>
+                        <span class="feedback-detail"></span>
+                    </div>
                     <div id="best-play-tooltip" class="hidden">
                         <span class="tooltip-action"></span>
                         <span class="tooltip-reason"></span>
@@ -276,10 +280,22 @@
             <!-- Stats Panel -->
             <aside id="stats-panel">
                 <div id="count-section">
-                    <h3>Count <button id="toggle-count" class="toggle-btn">Hide</button></h3>
+                    <h3>Count <span id="hud-system" class="hud-system">hilo</span> <button id="toggle-count" class="toggle-btn">Hide</button></h3>
                     <div id="running-count">Running: <span>0</span></div>
                     <div id="true-count">True: <span>0</span></div>
                     <div id="cards-remaining">Cards: <span>312</span></div>
+                    <button id="btn-reveal-count" class="toggle-btn hidden">Reveal Count</button>
+                </div>
+
+                <div id="quant-section">
+                    <h3>Quant Desk</h3>
+                    <div id="hud-house-edge">House edge: <span>—</span></div>
+                    <div id="hud-edge">Your edge: <span>—</span></div>
+                    <div id="hud-kelly">Kelly bet: <span>—</span></div>
+                    <div id="hud-ror">Risk of ruin: <span>—</span></div>
+                    <div id="hud-n0">N₀ hands: <span>—</span></div>
+                    <div id="hud-dealer-bust">Dealer bust: <span>—</span></div>
+                    <canvas id="bankroll-spark" width="240" height="54"></canvas>
                 </div>
 
                 <h3>Session Stats</h3>
@@ -322,6 +338,55 @@
                 <span><kbd>C</kbd> Chart</span>
             </div>
         </footer>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="modal hidden">
+            <div class="modal-content settings-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button id="settings-close" class="modal-close">&times;</button>
+                </div>
+                <div class="settings-grid">
+                    <div class="setting-block">
+                        <label for="setting-system">Counting system</label>
+                        <select id="setting-system">
+                            <option value="hilo">Hi-Lo</option>
+                            <option value="ko">KO (Knock Out)</option>
+                            <option value="omega2">Omega II</option>
+                            <option value="wong_halves">Wong Halves</option>
+                        </select>
+                        <p class="setting-note">Switching resets the running count.</p>
+                    </div>
+                    <div class="setting-block">
+                        <label for="setting-visibility">Count visibility</label>
+                        <select id="setting-visibility">
+                            <option value="always">Always visible — training</option>
+                            <option value="on_request">On request — peek when needed</option>
+                            <option value="hidden">Hidden — keep it in your head</option>
+                        </select>
+                        <p class="setting-note">Hidden mode is how you actually learn.</p>
+                    </div>
+                    <div class="setting-block">
+                        <label for="setting-rules">Table rules</label>
+                        <select id="setting-rules">
+                            <option value="default">House Default — 6 decks, H17</option>
+                            <option value="vegas_strip">Vegas Strip — 6 decks, S17</option>
+                            <option value="downtown_vegas">Downtown Vegas — 6 decks, H17</option>
+                            <option value="single_deck">Single Deck — no DAS, no surrender</option>
+                            <option value="atlantic_city">Atlantic City — 8 decks, S17</option>
+                        </select>
+                        <p class="setting-note">Changing rules starts a fresh shoe and bankroll.</p>
+                    </div>
+                    <div class="setting-block">
+                        <label>
+                            <input type="checkbox" id="setting-sound" checked>
+                            Sound effects
+                        </label>
+                        <p class="setting-note">All sounds are synthesized live — no recordings.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Strategy Chart Modal -->
         <div id="strategy-chart-modal" class="modal hidden">

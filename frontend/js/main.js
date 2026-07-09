@@ -3,11 +3,12 @@
  */
 
 import { appState } from './state.js';
-import { initTable, statsTracker, countTracker, resetGame } from './screens/table.js';
+import { initTable, statsTracker, resetGame, revealCount } from './screens/table.js';
 import { initStrategyChart } from './screens/strategy-chart.js';
 import { initDrills } from './screens/drills.js';
 import { initStrategyDrill } from './screens/strategy-drill.js';
 import { initPerformance, refreshPerformanceStats } from './screens/performance.js';
+import { initSettings } from './screens/settings.js';
 import { armSound, isMuted, setMuted } from './juice/sound.js';
 
 function setupNavigation() {
@@ -92,15 +93,17 @@ function init() {
     initDrills();
     initStrategyDrill();
     initPerformance();
+    initSettings();
 
     setupNavigation();
     setupCountToggle();
     setupMuteButton();
 
     document.getElementById('btn-reset-session')?.addEventListener('click', resetGame);
+    document.getElementById('btn-reveal-count')?.addEventListener('click', revealCount);
 }
 
 init();
 
 // Expose a few pieces for debugging in the console
-window.__bjt = { appState, statsTracker, countTracker };
+window.__bjt = { appState, statsTracker };

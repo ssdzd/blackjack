@@ -155,45 +155,5 @@ export function getBestPlay(handInfo, trueCount = 0) {
     };
 }
 
-export function getBettingHint(trueCount) {
-    // Each TC point ~ 0.5% edge change; house edge at TC 0 ~ -0.5%
-    const baseEdge = -0.5;
-    const edgePerTC = 0.5;
-    const playerEdge = baseEdge + (trueCount * edgePerTC);
-
-    let units, level, message;
-
-    if (trueCount < 1) {
-        units = 1;
-        level = 'negative';
-        message = '1 unit - House edge';
-    } else if (trueCount < 2) {
-        units = 1;
-        level = 'breakeven';
-        message = '1 unit - Breakeven zone';
-    } else if (trueCount < 3) {
-        units = 2;
-        level = 'positive';
-        message = '2 units - Player advantage';
-    } else if (trueCount < 4) {
-        units = 4;
-        level = 'positive';
-        message = '4 units - Player advantage';
-    } else if (trueCount < 5) {
-        units = 6;
-        level = 'strong';
-        message = '6 units - Strong advantage';
-    } else {
-        units = Math.min(12, Math.floor(trueCount * 1.5));
-        level = 'strong';
-        message = `${units} units - Strong advantage`;
-    }
-
-    return {
-        units: units,
-        level: level,
-        message: message,
-        edge: playerEdge,
-        trueCount: trueCount
-    };
-}
+// Betting advice now comes from the server's Kelly math (state.quant);
+// the old client-side unit-ramp heuristic was deleted with it.

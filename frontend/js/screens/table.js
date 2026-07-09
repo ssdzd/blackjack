@@ -13,21 +13,20 @@ import { BlackjackClient } from '../ws.js';
 import { getSessionId } from '../api.js';
 import { appState } from '../state.js';
 import { StatsTracker } from '../session-stats.js';
-import { CountTracker } from '../count-local.js';
 import { getHandInfo } from '../hand-info.js';
-import { getBestPlay, getBettingHint, getActionClass, ACTION_NAMES } from '../strategy-data.js';
+import { getBestPlay, getActionClass, ACTION_NAMES } from '../strategy-data.js';
 import { refreshChartHighlight } from './strategy-chart.js';
 import { syncTable, initCardTilt } from '../components/cards3d.js';
+import { initHud, updateHud, applyCount, applyQuant, pushBankrollPoint, resetSparkline } from '../components/hud.js';
 import { wait } from '../juice/tween.js';
 import { addShake, SHAKE } from '../juice/shake.js';
-import { burstAt } from '../juice/particles.js';
+import { burstAt, sparkBurst } from '../juice/particles.js';
 import { play } from '../juice/sound.js';
 import { toast } from '../juice/toast.js';
 import { attachCounter } from '../juice/counter.js';
 
 let wsClient = null;
 export let statsTracker = null;
-export let countTracker = null;
 
 let lastBetAmount = 10;
 // The engine auto-advances to WAITING_FOR_BET after resolving a round, so
@@ -77,14 +76,13 @@ async function playbackStep(item) {
         return;
     }
 
+    if (item.kind === 'grade') {
+        showDecisionFeedback(item.grade);
+        return;
+    }
+
     const { event_type, state } = item.data;
     const data = item.data.data || {};
-
-    // Count every visible card exactly when it lands on the table
-    if (event_type === 'CARD_DEALT' && data.card !== '??') {
-        const rank = data.card.replace(/[♠♥♦♣]/g, '');
-        countTracker.countCard(rank);
-    }
 
     switch (event_type) {
         case 'CARD_DEALT':
@@ -110,7 +108,6 @@ async function playbackStep(item) {
             break;
 
         case 'SHOE_SHUFFLED':
-            countTracker.reset(6);
             play('shuffle');
             toast('Shoe shuffled — the count resets', { variant: 'gold' });
             applyState(state);
@@ -166,6 +163,9 @@ async function playbackStep(item) {
             } else {
                 play('push');
             }
+            if (state?.bankroll !== undefined) {
+                pushBankrollPoint(state.bankroll);
+            }
             await beat(320);
             break;
         }
@@ -184,21 +184,71 @@ function pulseFelt() {
     felt.classList.add('pulse-loss');
 }
 
+/** Show the server's grade for the last decision (the education beat). */
+function showDecisionFeedback(grade) {
+    if (!grade || grade.kind === 'bet') {
+        // Bet sizing feedback lives in the betting hint, not a chip
+        return;
+    }
+
+    const el = document.getElementById('decision-feedback');
+    if (!el) return;
+
+    const action = (grade.action || '').toUpperCase();
+    const correct = (grade.correct_action || '').toUpperCase();
+
+    let headline;
+    let detail = '';
+    if (grade.is_correct) {
+        headline = grade.is_deviation ? `✓ ${action} — index play` : `✓ ${action}`;
+        if (grade.is_deviation && grade.deviation) {
+            detail = grade.deviation.description;
+        }
+        sparkBurst(el.getBoundingClientRect().left + 40, el.getBoundingClientRect().top + 10, { count: 8 });
+    } else {
+        headline = `✗ ${action} — book says ${correct}`;
+        if (grade.deviation) {
+            detail = grade.deviation.description;
+        } else if (grade.why?.dealer_bust_pct !== undefined) {
+            detail = `${grade.why.hand}: dealer busts ${grade.why.dealer_bust_pct}% of the time`;
+        }
+    }
+
+    el.querySelector('.feedback-headline').textContent = headline;
+    el.querySelector('.feedback-detail').textContent = detail;
+    el.className = grade.is_correct ? 'feedback-correct' : 'feedback-wrong';
+    el.classList.remove('hidden');
+    el.classList.add('feedback-pop');
+
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => {
+        el.classList.add('hidden');
+        el.classList.remove('feedback-pop');
+    }, grade.is_correct ? 2200 : 4200);
+}
+
 // ---- Init / transport ----
 
 export function initTable() {
     statsTracker = new StatsTracker();
-    countTracker = new CountTracker('hilo');
 
     const bankrollEl = document.getElementById('bankroll-amount');
     if (bankrollEl) {
         bankrollCounter = attachCounter(bankrollEl, { flashClass: 'counter-flash' });
     }
 
+    initHud();
     connectWebSocket();
     wireControls();
     wireKeyboard();
     initCardTilt();
+}
+
+/** Send a configure message (settings screen, career mode). */
+export function configureSession(options) {
+    if (!wsClient) return;
+    flushQueue();
+    wsClient.send('configure', options);
 }
 
 function connectWebSocket() {
@@ -222,11 +272,29 @@ function connectWebSocket() {
         enqueue({ kind: 'event', data });
     });
 
+    wsClient.on('decision_result', (data) => {
+        enqueue({ kind: 'grade', grade: data.grade });
+    });
+
+    wsClient.on('count_reveal', (data) => {
+        applyCount(data.count);
+        if (data.quant) applyQuant(data.quant);
+        toast(`Running ${data.count.running >= 0 ? '+' : ''}${data.count.running}`, {
+            variant: 'gold',
+            title: 'Count revealed',
+        });
+    });
+
     wsClient.on('error', (data) => {
         showError(data.message);
     });
 
     wsClient.connect(getSessionId());
+}
+
+/** One-shot count reveal (on_request visibility mode). */
+export function revealCount() {
+    wsClient?.send('reveal_count');
 }
 
 // ---- State application (single source of DOM truth) ----
@@ -243,6 +311,7 @@ function applyState(state) {
         bankrollCounter.set(state.bankroll);
     }
 
+    updateHud(state);
     syncTable(state);
 
     // Dealer value line
@@ -257,17 +326,15 @@ function applyState(state) {
 
     updateControls(state);
 
-    // Shoe info for the count display
-    if (state.shoe_cards_remaining) {
-        const cardsEl = document.querySelector('#cards-remaining span');
-        if (cardsEl) cardsEl.textContent = state.shoe_cards_remaining;
-        countTracker.decksRemaining = state.shoe_decks_remaining;
-        countTracker.updateDisplay();
-    }
-
     updateBestPlayTooltip(state);
     updateBettingHint(state);
     refreshChartHighlight();
+}
+
+/** True count from the server payload (0 when hidden/unbalanced). */
+function serverTrueCount(state) {
+    const tc = state?.count?.true;
+    return typeof tc === 'number' ? tc : 0;
 }
 
 function updateControls(state) {
@@ -388,7 +455,7 @@ function newRound() {
 export function resetGame() {
     showingResult = false;
     statsTracker.reset();
-    countTracker.reset(6);
+    resetSparkline();
     flushQueue();
     wsClient.send('reset_game');
 }
@@ -416,7 +483,7 @@ function updateInsuranceHint() {
         return;
     }
 
-    const trueCount = countTracker ? countTracker.trueCount : 0;
+    const trueCount = serverTrueCount(appState.gameState);
     const hintAction = hintEl.querySelector('.hint-action');
 
     // Insurance is profitable at TC +3 or higher
@@ -446,7 +513,7 @@ function updateBestPlayTooltip(state) {
         return;
     }
 
-    const trueCount = countTracker ? countTracker.trueCount : 0;
+    const trueCount = serverTrueCount(state);
     const bestPlay = getBestPlay(handInfo, trueCount);
 
     const actionEl = tooltip.querySelector('.tooltip-action');
@@ -473,20 +540,34 @@ function updateBettingHint(state) {
     const hintEl = document.getElementById('betting-hint');
     if (!hintEl) return;
 
-    if (!betHintsEnabled || state?.state !== 'WAITING_FOR_BET') {
+    // The hint needs the server's quant data (real Kelly math); without it
+    // (hidden visibility) there is nothing honest to show.
+    if (!betHintsEnabled || state?.state !== 'WAITING_FOR_BET' || !state?.quant) {
         hintEl.classList.add('hidden');
         return;
     }
 
-    const trueCount = countTracker ? countTracker.trueCount : 0;
-    const hint = getBettingHint(trueCount);
+    const quant = state.quant;
+    const edge = quant.player_edge_pct;
+    const trueCount = serverTrueCount(state);
 
-    hintEl.querySelector('.hint-units').textContent = hint.message;
-    hintEl.querySelector('.hint-edge').textContent = `Player edge: ${hint.edge >= 0 ? '+' : ''}${hint.edge.toFixed(1)}%`;
-    hintEl.querySelector('.hint-count span').textContent = trueCount.toFixed(1);
+    let level;
+    if (edge < -0.2) level = 'negative';
+    else if (edge < 0.2) level = 'breakeven';
+    else if (edge < 1.0) level = 'positive';
+    else level = 'strong';
+
+    const message = edge > 0
+        ? `Bet $${quant.kelly_bet} — half-Kelly for this edge`
+        : `Table minimum — the house has the edge`;
+
+    hintEl.querySelector('.hint-units').textContent = message;
+    hintEl.querySelector('.hint-edge').textContent = `Your edge: ${edge >= 0 ? '+' : ''}${edge.toFixed(2)}%`;
+    hintEl.querySelector('.hint-count span').textContent =
+        state.count?.balanced ? trueCount.toFixed(1) : 'RC ' + (state.count?.running ?? '—');
 
     hintEl.className = '';
-    hintEl.classList.add(`advantage-${hint.level}`);
+    hintEl.classList.add(`advantage-${level}`);
 
     hintEl.classList.remove('hidden');
 }

@@ -492,6 +492,42 @@ span#perf-net-result.negative {
     border-radius: var(--radius-md);
 }
 
+/* ---- Settings panel ---- */
+
+.settings-content {
+    width: min(560px, calc(100vw - 40px));
+}
+
+.settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.setting-block {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.setting-block > label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ivory-soft);
+}
+
+.setting-block select {
+    width: 100%;
+}
+
+.setting-note {
+    font-size: 12px;
+    color: var(--ivory-mute);
+    margin: 0;
+}
+
 /* ---- Strategy chart modal ---- */
 
 .modal {
