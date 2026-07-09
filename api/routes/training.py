@@ -32,6 +32,8 @@ router = APIRouter()
 _drill_sessions: dict[str, dict] = {}
 # Speed drill storage (separate for scoring)
 _speed_drills: dict[str, dict] = {}
+# True-count conversion drills
+_tc_drills: dict[str, dict] = {}
 
 
 def _get_counting_system(name: str):
@@ -314,6 +316,74 @@ async def verify_speed_drill(
             "accuracy": accuracy_bonus,
         },
     )
+
+
+@router.post("/tc-conversion")
+async def tc_conversion_drill() -> dict:
+    """Generate a true-count conversion problem (stage 5 of the pedagogy)."""
+    rng = Random()
+    running_count = rng.choice([c for c in range(-18, 19) if c != 0])
+    decks_remaining = rng.choice([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0])
+
+    drill_id = str(uuid.uuid4())
+    _tc_drills[drill_id] = {
+        "running_count": running_count,
+        "decks_remaining": decks_remaining,
+        "created": time.time(),
+    }
+    # Opportunistic cleanup of stale drills
+    if len(_tc_drills) > 500:
+        cutoff = time.time() - 3600
+        for key in [k for k, v in _tc_drills.items() if v["created"] < cutoff]:
+            _tc_drills.pop(key, None)
+
+    return {
+        "drill_id": drill_id,
+        "running_count": running_count,
+        "decks_remaining": decks_remaining,
+    }
+
+
+@router.post("/tc-conversion/verify")
+async def tc_conversion_verify(
+    payload: dict,
+    profile_id: Annotated[str | None, Header(alias="X-Profile-ID")] = None,
+) -> dict:
+    """Verify a true-count conversion answer.
+
+    Convention: truncate toward zero (the conservative floor counters use),
+    so RC +7 across 2 decks is TC +3, and RC -7 across 2 decks is TC -3.
+    """
+    drill = _tc_drills.pop(payload.get("drill_id", ""), None)
+    if drill is None:
+        return {"correct": False, "error": "Unknown or expired drill"}
+
+    exact = drill["running_count"] / drill["decks_remaining"]
+    expected = int(exact)  # truncates toward zero
+    try:
+        answer = int(payload.get("user_tc"))
+    except (TypeError, ValueError):
+        return {"correct": False, "error": "user_tc must be an integer"}
+
+    correct = answer == expected
+
+    from api.progression_store import progress
+
+    await progress(
+        profile_id, "drill", {"drill_key": "tc-conversion", "correct": correct}
+    )
+
+    return {
+        "correct": correct,
+        "expected": expected,
+        "exact": round(exact, 2),
+        "running_count": drill["running_count"],
+        "decks_remaining": drill["decks_remaining"],
+        "method_hint": (
+            "Divide the running count by decks remaining and keep the "
+            "integer part (truncate toward zero)."
+        ),
+    }
 
 
 def _create_hand_for_deviation(deviation: IndexPlay, rng: Random) -> tuple[list[Card], Card]:

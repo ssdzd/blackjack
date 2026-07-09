@@ -492,6 +492,225 @@ span#perf-net-result.negative {
     border-radius: var(--radius-md);
 }
 
+/* ---- Academy ---- */
+
+.academy-stage {
+    margin-bottom: 22px;
+}
+
+.stage-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    color: var(--gold-deep);
+    margin-bottom: 10px;
+}
+
+.academy-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+}
+
+.node-card {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    background: rgba(7, 9, 8, 0.4);
+    border: 1px solid var(--panel-hairline);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+}
+
+.node-card.locked {
+    opacity: 0.55;
+}
+
+.node-card.available,
+.node-card.in_progress {
+    border-color: var(--gold-faint);
+}
+
+.node-card.mastered {
+    border-color: var(--gold-deep);
+    background: linear-gradient(160deg, rgba(212, 175, 55, 0.09), rgba(7, 9, 8, 0.4) 60%);
+}
+
+.node-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.node-name {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ivory);
+}
+
+.node-card.mastered .node-name {
+    color: var(--gold-bright);
+}
+
+.node-status {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--ivory-mute);
+}
+
+.node-card.mastered .node-status {
+    color: var(--gold-bright);
+}
+
+.node-desc {
+    font-size: 12.5px;
+    color: var(--ivory-mute);
+}
+
+.node-gate {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--gold-deep);
+}
+
+.node-progress {
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(243, 236, 221, 0.1);
+    overflow: hidden;
+}
+
+.node-progress span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright));
+    border-radius: 3px;
+    transition: width 500ms var(--ease-smooth);
+}
+
+.node-progress-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ivory-mute);
+}
+
+.node-unlocks {
+    font-size: 11px;
+    color: var(--ivory-mute);
+    font-style: italic;
+}
+
+.node-train {
+    align-self: flex-start;
+    margin-top: 2px;
+}
+
+/* ---- TC trainer ---- */
+
+#tc-trainer {
+    margin-top: 26px;
+    padding: 18px 20px;
+    background: rgba(7, 9, 8, 0.4);
+    border: 1px solid var(--panel-hairline);
+    border-radius: var(--radius-md);
+}
+
+#tc-trainer h3 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ivory-mute);
+    margin-bottom: 6px;
+}
+
+.tc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 10px 0;
+}
+
+.tc-question {
+    font-family: var(--font-mono);
+    font-size: 17px;
+    color: var(--gold-bright);
+    min-width: 240px;
+}
+
+#tc-answer {
+    width: 84px;
+    text-align: center;
+}
+
+#tc-result {
+    font-size: 13px;
+    color: var(--ivory-mute);
+    min-height: 20px;
+}
+
+/* ---- Onboarding ---- */
+
+.onboarding-content {
+    width: min(560px, calc(100vw - 40px));
+    text-align: center;
+}
+
+.onboarding-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold-bright);
+    margin-bottom: 8px;
+}
+
+.onboarding-sub {
+    font-size: 14px;
+    color: var(--ivory-mute);
+    max-width: 46ch;
+    margin: 0 auto 20px;
+}
+
+.onboarding-paths {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.onboarding-path {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    text-align: left;
+    text-transform: none;
+    letter-spacing: normal;
+    padding: 14px 18px;
+}
+
+.onboarding-path .path-name {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--gold-bright);
+}
+
+.onboarding-path .path-desc {
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--ivory-mute);
+}
+
 /* ---- Career ---- */
 
 #venue-grid {

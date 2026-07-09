@@ -13,11 +13,14 @@ import { initSettings } from './screens/settings.js';
 import { initProfile, showProfile } from './screens/profile.js';
 import { initDaily, showDaily } from './screens/daily.js';
 import { initCareer, showCareer } from './screens/career.js';
+import { initAcademy, showAcademy } from './screens/academy.js';
+import { initTcTrainer } from './screens/tc-trainer.js';
+import { initOnboarding, maybeShowOnboarding } from './screens/onboarding.js';
 import { ensureProfile } from './progression.js';
 import { armSound, isMuted, setMuted } from './juice/sound.js';
 
 function setupNavigation() {
-    const routes = ['play', 'career', 'count-drill', 'strategy-drill', 'daily', 'performance', 'profile'];
+    const routes = ['play', 'academy', 'career', 'count-drill', 'strategy-drill', 'daily', 'performance', 'profile'];
     for (const mode of routes) {
         document.getElementById(`nav-${mode}`)?.addEventListener('click', (e) => {
             e.preventDefault();
@@ -29,6 +32,7 @@ function setupNavigation() {
     onEnter('profile', showProfile);
     onEnter('daily', showDaily);
     onEnter('career', showCareer);
+    onEnter('academy', showAcademy);
 
     document.getElementById('nav-settings')?.addEventListener('click', (e) => {
         e.preventDefault();
@@ -73,6 +77,9 @@ function init() {
     initProfile();
     initDaily();
     initCareer();
+    initAcademy();
+    initTcTrainer();
+    initOnboarding();
 
     setupNavigation();
     setupCountToggle();
@@ -83,7 +90,10 @@ function init() {
 
     // Attach the player profile to the live game session
     ensureProfile()
-        .then(profile => configureSession({ profile_id: profile.profile_id }))
+        .then(profile => {
+            configureSession({ profile_id: profile.profile_id });
+            maybeShowOnboarding();
+        })
         .catch(err => console.error('Profile init failed:', err));
 }
 

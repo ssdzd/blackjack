@@ -34,7 +34,8 @@ def base_url():
 
 @pytest.fixture
 def game_page(page: Page, server, base_url):
-    """A page navigated to the game."""
+    """A page navigated to the game (first-run onboarding pre-dismissed)."""
+    page.add_init_script("localStorage.setItem('bjt-onboarded', '1')")
     page.goto(base_url)
     page.wait_for_selector("#game-area")
     return page

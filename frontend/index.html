@@ -167,6 +167,19 @@
                     <h3>High Scores</h3>
                     <div id="high-scores-list"></div>
                 </div>
+
+                <!-- True count converter -->
+                <div id="tc-trainer">
+                    <h3>True Count Converter</h3>
+                    <p class="drill-description">The running count lies; divide by decks remaining. Truncate toward zero.</p>
+                    <div class="tc-row">
+                        <span id="tc-question" class="tc-question">Press New Problem</span>
+                        <input type="number" id="tc-answer" step="1" placeholder="TC">
+                        <button id="btn-tc-submit" class="btn-small">Answer</button>
+                        <button id="btn-tc-new" class="btn-small">New Problem</button>
+                    </div>
+                    <div id="tc-result"></div>
+                </div>
             </section>
 
             <!-- Strategy Drill Area -->
@@ -292,6 +305,13 @@
                 <button id="btn-reset-stats" class="btn-small btn-danger">Reset All Stats</button>
             </section>
 
+            <!-- Academy (skill tree) -->
+            <section id="academy-area" class="drill-area hidden">
+                <h2>The Academy</h2>
+                <p class="drill-description">Seven stages from the chart to the casino floor. Every gate is demonstrated skill over your recent attempts — no grinding past it, no buying through it.</p>
+                <div id="academy-tree"></div>
+            </section>
+
             <!-- Career -->
             <section id="career-area" class="drill-area hidden">
                 <h2>Career</h2>
@@ -394,6 +414,7 @@
         <footer>
             <nav>
                 <a href="#" id="nav-play" class="active">Play</a>
+                <a href="#" id="nav-academy">Academy</a>
                 <a href="#" id="nav-career">Career</a>
                 <a href="#" id="nav-daily">Daily</a>
                 <a href="#" id="nav-count-drill">Count Drill</a>
@@ -411,6 +432,28 @@
                 <span><kbd>C</kbd> Chart</span>
             </div>
         </footer>
+
+        <!-- Onboarding -->
+        <div id="onboarding-modal" class="modal hidden">
+            <div class="modal-content onboarding-content">
+                <h2 class="onboarding-title">♠ Welcome to the Table ♦</h2>
+                <p class="onboarding-sub">A card counting trainer where every number is real — house edges, Kelly stakes, risk of ruin. Where do you want to start?</p>
+                <div class="onboarding-paths">
+                    <button id="onboard-new" class="onboarding-path">
+                        <span class="path-name">Teach me from scratch</span>
+                        <span class="path-desc">Start at basic strategy in the Academy. Seven stages to casino-ready.</span>
+                    </button>
+                    <button id="onboard-knows" class="onboarding-path">
+                        <span class="path-name">I know basic strategy</span>
+                        <span class="path-desc">Prove it in the Academy — 40 drill hands opens the counting stages.</span>
+                    </button>
+                    <button id="onboard-deal" class="onboarding-path">
+                        <span class="path-name">Just deal</span>
+                        <span class="path-desc">Straight to the table with the full quant HUD. Explore at will.</span>
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- Count check-in modal -->
         <div id="checkin-modal" class="modal hidden">
