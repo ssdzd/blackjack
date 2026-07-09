@@ -10,6 +10,9 @@ let countTracker = null;
 let countVisible = true;
 let currentMode = 'play'; // 'play', 'count-drill', 'strategy-drill'
 let lastBetAmount = 10;
+// The engine auto-advances to WAITING_FOR_BET after resolving a round, so
+// this flag keeps the result panel up until the player starts the next round.
+let showingResult = false;
 
 // Initialize game
 async function initGame() {
@@ -91,6 +94,7 @@ function handleGameEvent(data) {
             amount: Math.abs(result),
             wager: lastBetAmount,
         });
+        showingResult = true;
         showRoundResult(result);
     }
 
@@ -223,10 +227,15 @@ function updateControls(state) {
 
     switch (state.state) {
         case 'WAITING_FOR_BET':
-            bettingControls.classList.remove('hidden');
-            // Clear any previous result
-            document.getElementById('round-result').textContent = '';
-            document.getElementById('round-result').className = '';
+            if (showingResult) {
+                // Round just resolved; keep the result up until "New Round"
+                resultControls.classList.remove('hidden');
+            } else {
+                bettingControls.classList.remove('hidden');
+                // Clear any previous result
+                document.getElementById('round-result').textContent = '';
+                document.getElementById('round-result').className = '';
+            }
             break;
 
         case 'OFFERING_INSURANCE':
@@ -307,12 +316,14 @@ function playerAction(action) {
 }
 
 function newRound() {
+    showingResult = false;
     document.getElementById('round-result').textContent = '';
     document.getElementById('round-result').className = '';
     wsClient.newRound();
 }
 
 function resetGame() {
+    showingResult = false;
     statsTracker.reset();
     countTracker.reset(6);
     wsClient.send('reset_game');

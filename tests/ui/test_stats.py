@@ -53,13 +53,12 @@ class TestStatsPanel:
         """Test toggle count button is visible."""
         expect(game_page.locator("#toggle-count")).to_be_visible()
 
-    def test_count_updates_after_hand(self, game_page: Page):
+    def test_count_updates_after_hand(self, game_page: Page, reach_player_turn):
         """Test count updates after playing a hand."""
         initial_cards = game_page.locator("#cards-remaining span").text_content()
 
         # Play a hand
-        game_page.click("#btn-bet")
-        game_page.wait_for_selector("#action-controls:not(.hidden)", timeout=5000)
+        reach_player_turn(game_page)
         game_page.click("#btn-stand")
         game_page.wait_for_selector("#result-controls:not(.hidden)", timeout=5000)
 
@@ -67,13 +66,14 @@ class TestStatsPanel:
         updated_cards = game_page.locator("#cards-remaining span").text_content()
         assert int(updated_cards) < int(initial_cards)
 
-    def test_hands_played_increments(self, game_page: Page):
+    def test_hands_played_increments(self, game_page: Page, reach_player_turn):
         """Test hands played increments after completing a hand."""
-        # Play a hand
-        game_page.click("#btn-bet")
-        game_page.wait_for_selector("#action-controls:not(.hidden)", timeout=5000)
+        reach_player_turn(game_page)
+        # reach_player_turn may have completed instantly-resolved rounds
+        before = int(game_page.locator("#hands-played span").text_content())
+
         game_page.click("#btn-stand")
         game_page.wait_for_selector("#result-controls:not(.hidden)", timeout=5000)
 
         hands_played = game_page.locator("#hands-played span")
-        expect(hands_played).to_have_text("1")
+        expect(hands_played).to_have_text(str(before + 1))

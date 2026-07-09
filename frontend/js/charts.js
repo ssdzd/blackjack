@@ -205,7 +205,10 @@ class CountTracker {
                 rcEl.textContent = this.runningCount.toFixed(1);
             }
         }
-        if (tcEl) tcEl.textContent = this.trueCount.toFixed(1);
+        if (tcEl) {
+            const tc = this.trueCount;
+            tcEl.textContent = Number.isInteger(tc) ? tc : tc.toFixed(1);
+        }
         if (cardsEl) cardsEl.textContent = Math.round(this.decksRemaining * 52);
     }
 
