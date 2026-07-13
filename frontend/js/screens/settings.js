@@ -8,6 +8,7 @@
 import { configureSession } from './table.js';
 import { isMuted, setMuted } from '../juice/sound.js';
 import { toast } from '../juice/toast.js';
+import { openModal, closeModal, bindBackdropClose } from '../modal.js';
 
 const LS_KEY = 'bjt-settings';
 
@@ -73,6 +74,18 @@ export function initSettings() {
     });
 
     document.getElementById('settings-close')?.addEventListener('click', () => {
-        panel.classList.add('hidden');
+        closeModal(panel);
     });
+    bindBackdropClose(panel);
+}
+
+/** Toggle the settings panel, keeping focus trap/return in sync. */
+export function toggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    if (!panel) return;
+    if (panel.classList.contains('hidden')) {
+        openModal(panel);
+    } else {
+        closeModal(panel);
+    }
 }

@@ -9,7 +9,7 @@ import { initStrategyChart } from './screens/strategy-chart.js';
 import { initDrills } from './screens/drills.js';
 import { initStrategyDrill } from './screens/strategy-drill.js';
 import { initPerformance, refreshPerformanceStats } from './screens/performance.js';
-import { initSettings } from './screens/settings.js';
+import { initSettings, toggleSettings } from './screens/settings.js';
 import { initProfile, showProfile } from './screens/profile.js';
 import { initDaily, showDaily } from './screens/daily.js';
 import { initCareer, showCareer } from './screens/career.js';
@@ -36,7 +36,7 @@ function setupNavigation() {
 
     document.getElementById('nav-settings')?.addEventListener('click', (e) => {
         e.preventDefault();
-        document.getElementById('settings-panel')?.classList.toggle('hidden');
+        toggleSettings();
     });
 }
 

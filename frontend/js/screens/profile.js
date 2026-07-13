@@ -56,10 +56,15 @@ function renderBadges(profile, badges) {
 
         const card = document.createElement('div');
         card.className = `badge-card ${earned ? 'earned' : 'locked'}`;
+        // Earned/locked is currently conveyed by opacity alone — add a
+        // text label so it reads correctly without color/contrast cues.
         card.innerHTML = `
             <div class="badge-name">${def.name}</div>
             <div class="badge-flavor">${def.flavor}</div>
-            <div class="badge-category">${def.category}</div>`;
+            <div class="badge-footer">
+                <span class="badge-category">${def.category}</span>
+                <span class="badge-state">${earned ? 'Earned' : 'Locked'}</span>
+            </div>`;
         grid.appendChild(card);
     }
 }

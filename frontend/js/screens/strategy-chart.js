@@ -5,33 +5,23 @@
 import { appState } from '../state.js';
 import { STRATEGY_TABLES, getActionClass } from '../strategy-data.js';
 import { getHandInfo } from '../hand-info.js';
+import { openModal, closeModal, bindBackdropClose } from '../modal.js';
 
 export function initStrategyChart() {
+    const modal = document.getElementById('strategy-chart-modal');
     document.getElementById('btn-strategy-chart')?.addEventListener('click', openStrategyChart);
-    document.querySelector('#strategy-chart-modal .modal-close')?.addEventListener('click', closeStrategyChart);
+    modal?.querySelector('.modal-close')?.addEventListener('click', closeStrategyChart);
+    bindBackdropClose(modal);
     setupChartTabs();
 
+    // 'C' toggles the chart; Escape-while-open is handled by modal.js
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            closeStrategyChart();
-            return;
-        }
         if (e.key.toLowerCase() === 'c' && document.activeElement.tagName !== 'INPUT') {
-            const modal = document.getElementById('strategy-chart-modal');
             if (modal?.classList.contains('hidden')) {
                 openStrategyChart();
             } else {
                 closeStrategyChart();
             }
-        }
-    });
-
-    // Click outside modal to close
-    document.addEventListener('click', (e) => {
-        const modal = document.getElementById('strategy-chart-modal');
-        if (!modal || modal.classList.contains('hidden')) return;
-        if (e.target === modal) {
-            closeStrategyChart();
         }
     });
 }
@@ -41,7 +31,7 @@ export function openStrategyChart() {
     if (!modal) return;
 
     generateStrategyCharts();
-    modal.classList.remove('hidden');
+    openModal(modal);
 
     if (appState.gameState?.state === 'PLAYER_TURN') {
         highlightCurrentHand();
@@ -49,10 +39,7 @@ export function openStrategyChart() {
 }
 
 export function closeStrategyChart() {
-    const modal = document.getElementById('strategy-chart-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
+    closeModal(document.getElementById('strategy-chart-modal'));
 }
 
 /**

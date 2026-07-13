@@ -11,6 +11,7 @@ import { downloadShareCard } from '../components/share-card.js';
 import { toast } from '../juice/toast.js';
 import { play } from '../juice/sound.js';
 import { burstAt } from '../juice/particles.js';
+import { openModal, closeModal } from '../modal.js';
 
 let lastResult = null;
 
@@ -40,7 +41,7 @@ export function initDaily() {
     });
 
     document.getElementById('btn-daily-close')?.addEventListener('click', () => {
-        document.getElementById('daily-result-modal')?.classList.add('hidden');
+        closeModal(document.getElementById('daily-result-modal'));
         switchMode('daily');
         showDaily();
     });
@@ -97,10 +98,11 @@ function handleDailyMessage(type, data) {
 
     if (type === 'count_checkin_request') {
         const modal = document.getElementById('checkin-modal');
-        modal.classList.remove('hidden');
         const input = document.getElementById('checkin-input');
         input.value = '';
-        input.focus();
+        // Required input mid-challenge: Escape/backdrop must not skip it,
+        // but the focus trap and tab order still apply.
+        openModal(modal, { escapable: false });
         play('flip');
     }
 
@@ -108,7 +110,7 @@ function handleDailyMessage(type, data) {
         // Only surface during a visible checkin modal flow
         const modal = document.getElementById('checkin-modal');
         if (!modal.classList.contains('hidden')) {
-            modal.classList.add('hidden');
+            closeModal(modal);
             if (data.correct) {
                 toast('Exact. The count is real.', { variant: 'gold', title: 'Count check' });
             } else {
@@ -144,7 +146,7 @@ function showResultModal(result) {
     modal.querySelector('.daily-grid').textContent = result.emoji_grid;
 
     document.getElementById('daily-banner')?.classList.add('hidden');
-    modal.classList.remove('hidden');
+    openModal(modal);
     play(result.score >= 700 ? 'blackjack' : 'win');
     burstAt(modal.querySelector('.daily-score-big'), 'confetti', { count: 50 });
 }

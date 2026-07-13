@@ -12,6 +12,10 @@ function layer() {
     if (!el) {
         el = document.createElement('div');
         el.id = 'toast-layer';
+        // A single live region instruments every toast() call site at
+        // once — badges, level-ups, node mastery, heat, backed-off, etc.
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
         document.body.appendChild(el);
     }
     return el;

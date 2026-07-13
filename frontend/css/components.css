@@ -1299,12 +1299,32 @@ span#perf-net-result.negative {
     min-height: 30px;
 }
 
+.badge-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .badge-card .badge-category {
     font-family: var(--font-mono);
     font-size: 9px;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--gold-deep);
+}
+
+.badge-card .badge-state {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ivory-mute);
+}
+
+.badge-card.earned .badge-state {
+    color: var(--win-green);
 }
 
 #lifetime-stats {
