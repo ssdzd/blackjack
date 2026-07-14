@@ -259,6 +259,24 @@ class TrainingGameSession:
 
     # ---- Grading ----
 
+    _EV_MODELED_ACTIONS = frozenset({"hit", "stand", "double"})
+
+    def _action_ev(
+        self, action: str, hand_value: int, is_soft: bool, upcard: int
+    ) -> float | None:
+        """EV of one action in units of the original bet, infinite-deck.
+
+        Returns None for actions that aren't modeled (split would need a
+        two-hand recursive calculation) rather than fake a number.
+        """
+        if action == "surrender":
+            return -0.5  # forfeit half the bet, deterministic
+        if action in self._EV_MODELED_ACTIONS:
+            return self.probability.expected_value(
+                hand_value, upcard, action, is_soft=is_soft
+            )
+        return None
+
     def grade_action(self, action: str) -> DecisionGrade | None:
         """Grade a player action against strategy. Call BEFORE executing."""
         if self.game.state.name != "PLAYER_TURN":
@@ -303,6 +321,7 @@ class TrainingGameSession:
 
         correct = deviation.deviation_action if deviation else basic
         correct_name = _ACTION_NAMES.get(correct, correct.name.lower())
+        is_correct = action == correct_name
 
         why: dict[str, Any] = {
             "dealer_bust_pct": round(
@@ -324,11 +343,19 @@ class TrainingGameSession:
             if near is None:
                 why["strategy_note"] = "Basic strategy"
 
+        if not is_correct:
+            chosen_ev = self._action_ev(action, hand.value, hand.is_soft, upcard)
+            correct_ev = self._action_ev(correct_name, hand.value, hand.is_soft, upcard)
+            # Split EV isn't modeled (would need a two-hand recursive
+            # calculation); omit the field rather than fake a number.
+            if chosen_ev is not None and correct_ev is not None:
+                why["ev_cost_pct"] = round((correct_ev - chosen_ev) * 100, 1)
+
         return DecisionGrade(
             kind="action",
             action=action,
             correct_action=correct_name,
-            is_correct=action == correct_name,
+            is_correct=is_correct,
             true_count=round(tc, 2) if self.counter.is_balanced else None,
             is_deviation=deviation is not None,
             deviation=(

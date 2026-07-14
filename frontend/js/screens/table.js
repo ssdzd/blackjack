@@ -213,11 +213,16 @@ function showDecisionFeedback(grade) {
         sparkBurst(el.getBoundingClientRect().left + 40, el.getBoundingClientRect().top + 10, { count: 8 });
     } else {
         headline = `✗ ${action} — book says ${correct}`;
+        const parts = [];
         if (grade.deviation) {
-            detail = grade.deviation.description;
+            parts.push(grade.deviation.description);
         } else if (grade.why?.dealer_bust_pct !== undefined) {
-            detail = `${grade.why.hand}: dealer busts ${grade.why.dealer_bust_pct}% of the time`;
+            parts.push(`${grade.why.hand}: dealer busts ${grade.why.dealer_bust_pct}% of the time`);
         }
+        if (typeof grade.why?.ev_cost_pct === 'number' && grade.why.ev_cost_pct > 0) {
+            parts.push(`cost you ~${grade.why.ev_cost_pct.toFixed(1)}% EV`);
+        }
+        detail = parts.join(' · ');
     }
 
     el.querySelector('.feedback-headline').textContent = headline;

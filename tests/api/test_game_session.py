@@ -161,6 +161,43 @@ class TestGrading:
         session = make_session(seed=2)
         assert session.grade_action("hit") is None
 
+    def test_wrong_action_reports_ev_cost(self):
+        """A concrete, known-bad play (standing on 11 vs 6) must report a
+        positive EV cost matching the engine's own hit/stand numbers."""
+        session = self._hunt(
+            lambda hand, up, game: (
+                hand.value == 11 and not hand.is_soft and not hand.is_pair
+                and up == 6
+            )
+        )
+        session.counter._running_count = -12.0  # force basic strategy (no I18 nearby)
+        grade = session.grade_action("stand")
+        assert grade.is_correct is False
+        assert grade.correct_action == "double" or grade.correct_action == "hit"
+        assert "ev_cost_pct" in grade.why
+        assert grade.why["ev_cost_pct"] > 0  # standing on 11 is strictly worse
+
+    def test_correct_action_has_no_ev_cost(self):
+        """grade_action is read-only (doesn't mutate session state), so a
+        probe call to learn the correct answer and a real call to play it
+        are safe to chain on the same hand."""
+        session = self._hunt(lambda hand, up, game: up == 6)
+        correct = session.grade_action("stand").correct_action
+        grade = session.grade_action(correct)
+        assert grade.is_correct is True
+        assert "ev_cost_pct" not in grade.why
+
+    def test_split_action_omits_ev_cost(self):
+        """Split EV isn't modeled; a wrong call on a splittable pair must
+        not fabricate a number."""
+        session = self._hunt(
+            lambda hand, up, game: hand.is_pair and game.can_split
+        )
+        grade = session.grade_action("stand")
+        if grade.correct_action == "split" or grade.action == "split":
+            # If either side of the comparison is "split", EV is unmodeled
+            assert "ev_cost_pct" not in grade.why
+
     def test_insurance_grading_by_count(self):
         session = make_session(seed=2)
         session.counter._running_count = 30.0  # TC ~ +5

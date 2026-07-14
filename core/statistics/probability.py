@@ -158,21 +158,26 @@ class ProbabilityEngine:
         player_total: int,
         dealer_upcard: int,
         action: str,
+        is_soft: bool = False,
     ) -> float:
         """
-        Calculate expected value for a given action.
+        Calculate expected value for a given action, infinite-deck assumption.
 
         Args:
             player_total: Player's hand total
             dealer_upcard: Dealer's upcard (2-11)
             action: Action to take ("stand", "hit", "double")
+            is_soft: Whether the player's total counts an ace as 11.
+                Unused for "stand" (which only compares final totals) but
+                required for "hit"/"double", where future draws behave
+                differently for e.g. soft 17 vs hard 17.
 
         Returns:
-            Expected value (-1 to +1 for basic bets)
+            Expected value in units of the original bet: -1 to +1 for
+            stand/hit, -2 to +2 for double (the bet is doubled).
         """
-        dealer_probs = self.dealer_probabilities(dealer_upcard).to_dict()
-
         if action == "stand":
+            dealer_probs = self.dealer_probabilities(dealer_upcard).to_dict()
             ev = 0.0
             for outcome, prob in dealer_probs.items():
                 dealer_total = self._outcome_to_total(outcome)
@@ -185,9 +190,104 @@ class ProbabilityEngine:
                 # Push: EV += 0
             return ev
 
-        # For hit/double, would need recursive calculation
-        # This is a simplified placeholder
-        return 0.0
+        low_total, has_ace = self._seed_state(player_total, is_soft)
+
+        if action == "hit":
+            memo: dict[tuple[int, bool], float] = {}
+            ev = 0.0
+            for rank_value in range(1, 11):
+                prob = self.card_probability(rank_value)
+                new_low, new_has_ace = self._apply_card(low_total, has_ace, rank_value)
+                if new_low > 21:
+                    ev += prob * -1.0  # Bust
+                else:
+                    ev += prob * self._optimal_continuation_ev(
+                        new_low, new_has_ace, dealer_upcard, memo
+                    )
+            return ev
+
+        if action == "double":
+            # Exactly one forced card, bet doubled, then forced to stand.
+            ev = 0.0
+            for rank_value in range(1, 11):
+                prob = self.card_probability(rank_value)
+                new_low, new_has_ace = self._apply_card(low_total, has_ace, rank_value)
+                if new_low > 21:
+                    ev += prob * -2.0  # Bust with the doubled bet
+                else:
+                    new_value, _ = self._display_value(new_low, new_has_ace)
+                    ev += prob * 2.0 * self.expected_value(new_value, dealer_upcard, "stand")
+            return ev
+
+        raise ValueError(f"Unknown action: {action}")
+
+    @staticmethod
+    def _seed_state(player_total: int, is_soft: bool) -> tuple[int, bool]:
+        """Convert a displayed (total, is_soft) into the recursion's
+        (low_total, has_ace) state, where low_total counts every ace as 1.
+
+        For is_soft=False this always sets has_ace=False. That's safe even
+        when the hand actually contains a "dead" ace (counted as 1 because
+        counting it as 11 would already bust): Hand.is_soft is False
+        exactly when there is no ace, or when total_hard + 10 > 21 — and
+        in the latter case low_total is already too high for the +10
+        bonus to ever apply again on future draws, so has_ace's true value
+        can never affect the result from here on.
+        """
+        if is_soft:
+            return player_total - 10, True
+        return player_total, False
+
+    @staticmethod
+    def _apply_card(low_total: int, has_ace: bool, rank_value: int) -> tuple[int, bool]:
+        """Apply drawing a card to a (low_total, has_ace) state.
+
+        rank_value is 1 for an Ace (always counted low here; "soft" is
+        derived separately via _display_value) or 2-10 for everything else
+        (10 covers ten/jack/queen/king as one probability-weighted bucket).
+        """
+        return low_total + rank_value, has_ace or rank_value == 1
+
+    @staticmethod
+    def _display_value(low_total: int, has_ace: bool) -> tuple[int, bool]:
+        """Convert a (low_total, has_ace) state to (displayed value, is_soft)."""
+        if has_ace and low_total + 10 <= 21:
+            return low_total + 10, True
+        return low_total, False
+
+    def _optimal_continuation_ev(
+        self,
+        low_total: int,
+        has_ace: bool,
+        dealer_upcard: int,
+        memo: dict[tuple[int, bool], float],
+    ) -> float:
+        """EV of playing this state optimally (hit-or-stand) from here on.
+
+        Total only increases as cards are drawn, so this recursion is a
+        DAG bounded by 21 — trivially memoizable on (low_total, has_ace).
+        """
+        key = (low_total, has_ace)
+        if key in memo:
+            return memo[key]
+
+        value, _ = self._display_value(low_total, has_ace)
+        stand_val = self.expected_value(value, dealer_upcard, "stand")
+
+        hit_val = 0.0
+        for rank_value in range(1, 11):
+            prob = self.card_probability(rank_value)
+            new_low, new_has_ace = self._apply_card(low_total, has_ace, rank_value)
+            if new_low > 21:
+                hit_val += prob * -1.0
+            else:
+                hit_val += prob * self._optimal_continuation_ev(
+                    new_low, new_has_ace, dealer_upcard, memo
+                )
+
+        result = max(stand_val, hit_val)
+        memo[key] = result
+        return result
 
     def _outcome_to_total(self, outcome: DealerOutcome) -> int:
         """Convert a dealer outcome to a hand total."""

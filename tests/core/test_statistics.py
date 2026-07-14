@@ -68,6 +68,104 @@ class TestProbabilityEngine:
         assert h17_probs.bust != s17_probs.bust
 
 
+class TestExpectedValue:
+    """Tests for hit/double/stand EV (infinite-deck recursive calculation)."""
+
+    def test_stand_bounds(self):
+        engine = ProbabilityEngine()
+        for total in range(12, 22):
+            for upcard in range(2, 12):
+                ev = engine.expected_value(total, upcard, "stand")
+                assert -1.0 <= ev <= 1.0
+
+    def test_hard_20_vs_6_strongly_favors_standing(self):
+        """The textbook case: never deviate from standing on a big total.
+
+        Hand-derived from the H17 dealer-outcome table for upcard 6
+        (bust=0.4256, 17/18/19 each ~0.105, 20=0.1051 push, 21=0.1536
+        lose): 0.4256+0.1050+0.1057+0.1050+0-0.1536 = 0.5877.
+        """
+        engine = ProbabilityEngine()
+        assert engine.expected_value(20, 6, "stand") == pytest.approx(0.5877, abs=0.001)
+
+    def test_11_vs_6_double_beats_hit_beats_stand(self):
+        """Classic double-down situation: double > hit > stand."""
+        engine = ProbabilityEngine()
+        stand_ev = engine.expected_value(11, 6, "stand")
+        hit_ev = engine.expected_value(11, 6, "hit")
+        double_ev = engine.expected_value(11, 6, "double")
+        assert double_ev > hit_ev > stand_ev
+
+    def test_16_vs_10_hit_beats_stand_but_is_still_negative(self):
+        """Textbook hard-16-vs-10: a bad spot, but hitting loses less."""
+        engine = ProbabilityEngine()
+        stand_ev = engine.expected_value(16, 10, "stand")
+        hit_ev = engine.expected_value(16, 10, "hit")
+        assert hit_ev > stand_ev
+        assert hit_ev < 0
+        assert stand_ev < 0
+
+    def test_hard_17_never_worth_hitting(self):
+        """Hard 17: standing should already be at least as good as hitting."""
+        engine = ProbabilityEngine()
+        for upcard in range(2, 12):
+            stand_ev = engine.expected_value(17, upcard, "stand")
+            hit_ev = engine.expected_value(17, upcard, "hit")
+            assert stand_ev >= hit_ev - 1e-9
+
+    def test_hit_bust_only_possibilities_are_certain_loss(self):
+        """Hard 21: every card busts, so hitting must be a guaranteed -1."""
+        engine = ProbabilityEngine()
+        ev = engine.expected_value(21, 6, "hit")
+        assert ev == pytest.approx(-1.0, abs=1e-9)
+
+    def test_double_bounds(self):
+        engine = ProbabilityEngine()
+        for total in range(9, 12):
+            for upcard in range(2, 12):
+                ev = engine.expected_value(total, upcard, "double")
+                assert -2.0 <= ev <= 2.0
+
+    def test_soft_vs_hard_hit_ev_differ(self):
+        """Soft 17 (A,6) and hard 17 must not be treated identically."""
+        engine = ProbabilityEngine()
+        soft_hit = engine.expected_value(17, 6, "hit", is_soft=True)
+        hard_hit = engine.expected_value(17, 6, "hit", is_soft=False)
+        assert soft_hit != pytest.approx(hard_hit, abs=1e-6)
+
+    def test_soft_17_vs_6_double_beats_stand(self):
+        """Textbook: double soft 17 against a dealer 6."""
+        engine = ProbabilityEngine()
+        stand_ev = engine.expected_value(17, 6, "stand")
+        double_ev = engine.expected_value(17, 6, "double", is_soft=True)
+        assert double_ev > stand_ev
+
+    def test_multi_ace_hand_does_not_crash_and_is_bounded(self):
+        """A,A,9 = soft 21 (three-card hand reachable only via hitting)."""
+        engine = ProbabilityEngine()
+        ev = engine.expected_value(21, 6, "hit", is_soft=True)
+        assert -1.0 <= ev <= 1.0
+
+    def test_unknown_action_raises(self):
+        engine = ProbabilityEngine()
+        with pytest.raises(ValueError):
+            engine.expected_value(15, 6, "surrender")
+
+    def test_recursion_is_memoized_and_fast(self):
+        """A cold call across the full total range must stay fast (DAG,
+        not exponential blowup) -- a regression here means memoization
+        broke."""
+        import time
+
+        engine = ProbabilityEngine()
+        start = time.monotonic()
+        for total in range(4, 22):
+            for upcard in range(2, 12):
+                engine.expected_value(total, upcard, "hit")
+        elapsed = time.monotonic() - start
+        assert elapsed < 2.0
+
+
 class TestHouseEdgeCalculator:
     """Tests for house edge calculations."""
 
