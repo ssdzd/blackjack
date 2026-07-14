@@ -14,8 +14,17 @@ html {
     height: 100%;
 }
 
+/* Defensive backstop: the page must never scroll sideways. Any element
+   that overflows should be caught by a component-level fix, not by
+   silently widening the page. */
+html,
+body {
+    overflow-x: hidden;
+}
+
 body {
     min-height: 100vh;
+    width: 100%;
     background:
         radial-gradient(1200px 600px at 50% -10%, rgba(212, 175, 55, 0.05), transparent 60%),
         radial-gradient(900px 500px at 85% 110%, rgba(29, 58, 42, 0.35), transparent 60%),

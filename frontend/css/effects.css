@@ -221,7 +221,8 @@ body::after {
     }
 
     header h1 {
-        font-size: 19px;
+        font-size: 15px;
+        letter-spacing: 0.05em;
     }
 
     .card {
@@ -258,6 +259,20 @@ body::after {
         gap: 8px;
     }
 
+    /* Nine nav destinations no longer fit in one unwrapped row — without
+       this they silently overflow past the viewport edge with no scroll
+       affordance, making Academy/Career/Daily/Profile unreachable by tap. */
+    footer nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        row-gap: 4px;
+    }
+
+    footer nav a {
+        padding: 6px 10px;
+        font-size: 10.5px;
+    }
+
     .keyboard-hints {
         display: none;
     }
@@ -265,5 +280,46 @@ body::after {
     #best-play-tooltip {
         position: static;
         margin-bottom: 8px;
+    }
+
+    /* Same overflow risk in the header: xp chip + mute + chart + bankroll
+       in one unwrapped row. */
+    .header-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    #xp-chip .xp-bar {
+        width: 40px;
+    }
+
+    /* Drill/screen panels: desktop padding leaves too little width for a
+       320px/300px grid minimum, so cards clip past the container edge. */
+    .drill-area {
+        padding: 18px 16px;
+    }
+
+    #venue-grid,
+    .academy-row {
+        grid-template-columns: 1fr;
+    }
+
+    #badge-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
+
+    .daily-card {
+        padding: 18px 16px;
+    }
+
+    .daily-score-big {
+        font-size: 52px;
+    }
+
+    .level-ring {
+        width: 64px;
+        height: 64px;
+        font-size: 26px;
     }
 }
