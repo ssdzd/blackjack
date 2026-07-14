@@ -8,6 +8,17 @@
 
 import { onFrame, reducedMotion } from './loop.js';
 
+// Measured (headless Chromium, CDP CPU throttling 1x/4x/6x): a realistic
+// single burst (count=60, matching the venue-clear/daily-complete call
+// sites) costs ~7-9% of frames >33ms during its ~1.7s lifetime, worst
+// case ~50ms; median frame time stays at 16.7ms throughout. Stacking 5
+// bursts back to back (300 particles, the POOL_MAX ceiling) pushes that
+// to ~11%, essentially flat from 1x to 6x throttle -- the cost is
+// canvas-fill/compositing-bound, not JS-bound, so it doesn't scale with
+// CPU speed and lowering POOL_MAX wouldn't reduce a single burst's cost
+// (that's set by count, not the pool ceiling). Idle rAF work (tweens,
+// springs, HUD counters) shows zero jitter even at 6x throttle. Not
+// worth tuning at current call-site counts (max real count is 60).
 const POOL_MAX = 300;
 
 const GOLD = ['#d4af37', '#ecd489', '#f5e7b8', '#96762a'];
