@@ -390,6 +390,14 @@ function applyState(state) {
         dealerValue.textContent = '';
     }
 
+    // Keep the bet input honest about the active table's limits
+    // (career venues range from $5 kitchen games to $5k high-limit rooms).
+    const betInput = document.getElementById('bet-amount');
+    if (betInput && state.rules) {
+        betInput.min = state.rules.min_bet;
+        betInput.max = state.rules.max_bet;
+    }
+
     updateControls(state);
 
     updateBestPlayTooltip(state);
@@ -397,10 +405,10 @@ function applyState(state) {
     refreshChartHighlight();
 }
 
-/** True count from the server payload (0 when hidden/unbalanced). */
+/** True count from the server payload, or null when hidden/absent. */
 function serverTrueCount(state) {
     const tc = state?.count?.true;
-    return typeof tc === 'number' ? tc : 0;
+    return typeof tc === 'number' ? tc : null;
 }
 
 function updateControls(state) {
@@ -494,8 +502,11 @@ export function showError(message) {
 
 function placeBet() {
     const amount = parseInt(document.getElementById('bet-amount').value);
-    if (amount < 10 || amount > 1000) {
-        showError('Bet must be between $10 and $1000');
+    const rules = appState.gameState?.rules;
+    const minBet = rules?.min_bet ?? 10;
+    const maxBet = rules?.max_bet ?? 1000;
+    if (Number.isNaN(amount) || amount < minBet || amount > maxBet) {
+        showError(`Bet must be between $${minBet} and $${maxBet}`);
         return;
     }
     lastBetAmount = amount;
@@ -550,6 +561,11 @@ function updateInsuranceHint() {
     }
 
     const trueCount = serverTrueCount(appState.gameState);
+    if (trueCount === null) {
+        // Count hidden: a TC-0 "decline" could contradict server grading.
+        hintEl.classList.add('hidden');
+        return;
+    }
     const hintAction = hintEl.querySelector('.hint-action');
 
     // Insurance is profitable at TC +3 or higher
@@ -580,6 +596,12 @@ function updateBestPlayTooltip(state) {
     }
 
     const trueCount = serverTrueCount(state);
+    if (trueCount === null) {
+        // Hidden-count session: the server grades against a count we can't
+        // see, so a TC-0 "best play" could coach a scored error.
+        tooltip.classList.add('hidden');
+        return;
+    }
     const bestPlay = getBestPlay(handInfo, trueCount);
 
     const actionEl = tooltip.querySelector('.tooltip-action');
@@ -630,7 +652,9 @@ function updateBettingHint(state) {
     hintEl.querySelector('.hint-units').textContent = message;
     hintEl.querySelector('.hint-edge').textContent = `Your edge: ${edge >= 0 ? '+' : ''}${edge.toFixed(2)}%`;
     hintEl.querySelector('.hint-count span').textContent =
-        state.count?.balanced ? trueCount.toFixed(1) : 'RC ' + (state.count?.running ?? '—');
+        state.count?.balanced && trueCount !== null
+            ? trueCount.toFixed(1)
+            : 'RC ' + (state.count?.running ?? '—');
 
     hintEl.className = '';
     hintEl.classList.add(`advantage-${level}`);

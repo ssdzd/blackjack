@@ -37,9 +37,10 @@ from api.game_session import (
     VISIBILITY_MODES,
     COUNTING_SYSTEMS,
 )
-from api.progression_store import load_profile, progress
+from api.progression_store import get_or_create_profile, load_profile, progress
 from api.routes.stats import record_stat_for_session
 from core.game.events import GameEvent, EventType
+from core.progression import new_profile
 from core.progression.daily import challenge_for_date, score_daily, share_payload
 from core.progression.heat import apply_heat, heat_events, is_backed_off
 from core.progression.venues import VENUES, can_enter
@@ -168,11 +169,13 @@ async def _record_round(session_id: str, session: TrainingGameSession) -> None:
     else:
         stat_type = "hand_push"
     try:
+        # value is the amount wagered; the realized net rides in details so
+        # a $10 blackjack records $10 wagered / +$15, not $15 / +$22.50.
         await record_stat_for_session(
             session_id,
             stat_type,
-            value=abs(result),
-            details={"bankroll": info.get("bankroll", 0)},
+            value=info.get("wager", 0) or abs(result),
+            details={"bankroll": info.get("bankroll", 0), "net": result},
         )
     except Exception:
         pass  # Stats persistence must never break gameplay
@@ -385,11 +388,18 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                             "type": "error", "message": "Unknown venue",
                         })
                         continue
-                    profile = (
-                        await load_profile(session.profile_id)
-                        if session.profile_id else None
-                    )
-                    if profile is not None and not can_enter(venue, profile):
+                    # Gate-check a real profile: an unknown id gets a fresh
+                    # career created on the spot, and no profile at all is
+                    # judged as one — a missing profile must never bypass
+                    # the venue's unlock and mastery gates.
+                    if session.profile_id:
+                        try:
+                            profile = await get_or_create_profile(session.profile_id)
+                        except Exception:
+                            profile = new_profile()  # store down: judge a fresh career
+                    else:
+                        profile = new_profile()
+                    if not can_enter(venue, profile):
                         await manager.send_message(session_id, {
                             "type": "error",
                             "message": "That room isn't open to you yet — check its gates.",

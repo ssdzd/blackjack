@@ -1,11 +1,13 @@
 """Tests for the progression API: profiles, settings, drill events, WS pushes."""
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
 import api.progression_store as store_module
 from api.main import app
-from api.progression_store import PROFILE_TTL, save_profile
+from api.progression_store import PROFILE_TTL, load_profile, progress, save_profile
 from core.progression import new_profile
 
 
@@ -51,6 +53,37 @@ class TestProfileLifecycle:
         assert calls["key"] == "profile:ttl-test"
         assert calls["ttl"] == PROFILE_TTL
         assert PROFILE_TTL >= 30 * 24 * 3600  # never the 1-hour session default
+
+    @pytest.mark.asyncio
+    async def test_concurrent_progress_calls_lose_nothing(self, monkeypatch):
+        """Interleaved progress() calls must serialize, not clobber each other."""
+        data: dict = {}
+
+        class YieldingStore:
+            # sleep(0) forces a loop yield inside every get/set, so without
+            # per-profile locking the two read-modify-writes would overlap
+            # and the second save would drop the first event.
+            async def get(self, key):
+                await asyncio.sleep(0)
+                return data.get(key)
+
+            async def set(self, key, value, ttl=None):
+                await asyncio.sleep(0)
+                data[key] = value
+
+        async def fake_get_store():
+            return YieldingStore()
+
+        monkeypatch.setattr(store_module, "get_session_store", fake_get_store)
+
+        await asyncio.gather(
+            progress("racer", "round", {"result": 10}),
+            progress("racer", "round", {"result": -10}),
+        )
+
+        profile = await load_profile("racer")
+        assert profile is not None
+        assert profile.lifetime["hands"] == 2
 
 
 class TestSettings:

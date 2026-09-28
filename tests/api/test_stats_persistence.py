@@ -5,6 +5,7 @@ import pytest
 from api.routes.stats import (
     _serialize_performance_stats,
     _deserialize_performance_stats,
+    apply_stat,
 )
 from api.schemas import PerformanceStats, SessionHistoryEntry
 
@@ -329,3 +330,34 @@ class TestHistoryEntryPersistence:
         assert restored.true_count == original.true_count
         assert restored.event_type == original.event_type
         assert restored.details == original.details
+
+
+class TestApplyStatNet:
+    """Wager and realized net are recorded separately (details["net"])."""
+
+    def test_blackjack_records_wager_and_true_net(self):
+        stats = PerformanceStats()
+        apply_stat(stats, "hand_blackjack", value=10, details={"net": 15})
+        assert stats.total_wagered == 10
+        assert stats.net_result == 15  # not 22.50 from double-paying 3:2
+
+    def test_surrender_loss_records_half_wager_net(self):
+        stats = PerformanceStats()
+        apply_stat(stats, "hand_loss", value=10, details={"net": -5})
+        assert stats.total_wagered == 10
+        assert stats.net_result == -5
+
+    def test_push_still_counts_the_wager(self):
+        stats = PerformanceStats()
+        apply_stat(stats, "hand_push", value=10, details={"net": 0})
+        assert stats.total_wagered == 10
+        assert stats.net_result == 0
+
+    def test_legacy_payloads_without_net_keep_old_semantics(self):
+        stats = PerformanceStats()
+        apply_stat(stats, "hand_blackjack", value=100)
+        assert stats.total_wagered == 100
+        assert stats.net_result == 150
+        apply_stat(stats, "hand_loss", value=50)
+        assert stats.total_wagered == 150
+        assert stats.net_result == 100

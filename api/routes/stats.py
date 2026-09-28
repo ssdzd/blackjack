@@ -213,30 +213,41 @@ def apply_stat(
     """
     now = int(time.time() * 1000)
 
+    # For hand_* entries, value is the amount wagered and the realized net
+    # for the round rides in details["net"] (surrender loses half the wager,
+    # insurance shifts a push, blackjack pays 3:2 — the wager alone can't
+    # express those). Without details["net"], fall back to deriving net from
+    # the wager as legacy REST payloads expect.
+    net = None
+    if details and isinstance(details.get("net"), (int, float)):
+        net = float(details["net"])
+
     if stat_type == "hand_win":
         stats.hands_played += 1
         stats.wins += 1
         if value:
             stats.total_wagered += value
-            stats.net_result += value
+        stats.net_result += net if net is not None else (value or 0)
     elif stat_type == "hand_loss":
         stats.hands_played += 1
         stats.losses += 1
         if value:
             stats.total_wagered += value
-            stats.net_result -= value
+        stats.net_result += net if net is not None else -(value or 0)
     elif stat_type == "hand_push":
         stats.hands_played += 1
         stats.pushes += 1
         if value:
             stats.total_wagered += value
+        if net is not None:
+            stats.net_result += net
     elif stat_type == "hand_blackjack":
         stats.hands_played += 1
         stats.wins += 1
         stats.blackjacks += 1
         if value:
             stats.total_wagered += value
-            stats.net_result += value * 1.5
+        stats.net_result += net if net is not None else (value or 0) * 1.5
     elif stat_type == "count_drill":
         stats.count_drills_attempted += 1
         if correct:

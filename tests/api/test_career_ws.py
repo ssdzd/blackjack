@@ -69,6 +69,20 @@ class TestVenuePlay:
             )
             assert message["type"] == "error"
 
+    def test_unknown_profile_cannot_bypass_gates(self, client):
+        """A never-created profile_id must not slip past venue gates."""
+        with client.websocket_connect("/ws/game/career-ghost") as ws:
+            ws.receive_json()
+            ws.send_json({
+                "type": "configure",
+                "profile_id": "ghost-never-created",
+                "venue_id": "high-limit-room",
+            })
+            message = drain_until(
+                ws, lambda m: m["type"] in ("error", "venue_entered")
+            )
+            assert message["type"] == "error"
+
     def test_trap_walkaway_awards_badge(self, client):
         profile = client.post("/api/progression/profile").json()
         pid = profile["profile_id"]

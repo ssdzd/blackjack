@@ -5,6 +5,7 @@ with their own key prefix and an explicit long TTL — the store's default
 TTL is one hour, which would wipe careers between sittings.
 """
 
+import asyncio
 from typing import Any
 
 from api.session import get_session_store
@@ -13,6 +14,19 @@ from core.progression.profile import ProgressionDelta
 
 PROFILE_TTL = 90 * 24 * 3600  # 90 days, refreshed on every save
 _KEY_PREFIX = "profile:"
+
+# Serialize each profile's read-modify-write: decision grading and round
+# events interleave across await points (and across sockets sharing a
+# profile), and the later save would silently drop the earlier event's XP.
+# In-process only — a multi-worker deploy needs an atomic store transaction.
+_profile_locks: dict[str, asyncio.Lock] = {}
+
+
+def _profile_lock(profile_id: str) -> asyncio.Lock:
+    lock = _profile_locks.get(profile_id)
+    if lock is None:
+        lock = _profile_locks.setdefault(profile_id, asyncio.Lock())
+    return lock
 
 
 def _key(profile_id: str) -> str:
@@ -66,9 +80,10 @@ async def progress(
     if not profile_id:
         return None
     try:
-        profile = await get_or_create_profile(profile_id)
-        delta = apply_event(profile, event_type, payload)
-        await save_profile(profile)
-        return delta
+        async with _profile_lock(profile_id):
+            profile = await get_or_create_profile(profile_id)
+            delta = apply_event(profile, event_type, payload)
+            await save_profile(profile)
+            return delta
     except Exception:
         return None
