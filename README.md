@@ -1,5 +1,7 @@
 # ♠ Blackjack Noir — Card Counting Trainer ♦
 
+[![CI](https://github.com/ssdzd/blackjack/actions/workflows/ci.yml/badge.svg)](https://github.com/ssdzd/blackjack/actions/workflows/ci.yml)
+
 A professional blackjack card counting trainer: **statistical engine first, game second**.
 Every number on screen — house edges, Kelly stakes, risk of ruin, dealer bust
 probabilities — is computed live by the engine, not decoration.
@@ -60,12 +62,15 @@ development. Player profiles persist for 90 days per browser (localStorage id).
 ### Tests
 
 ```bash
-pip install pytest-asyncio pytest-timeout pytest-playwright
+pip install -r requirements-dev.txt
 playwright install chromium   # for the UI suite
 
-pytest                        # ~370 tests: core, api, websocket, browser UI
+pytest                        # ~380 tests: core, api, websocket, browser UI
 pytest tests/core -q          # engine + progression only (fast)
 ```
+
+Without playwright installed, the UI suite skips itself and the rest of the
+tests still run — CI runs it in a dedicated job.
 
 The UI suite boots its own uvicorn on port 8765 and drives a headless
 Chromium. Run one pytest at a time — two suites fight over the port.

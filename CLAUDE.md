@@ -39,7 +39,9 @@ tests/          # pytest tests mirroring core/ and api/ structure
 # Setup
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt      # runtime + core test deps
+pip install -r requirements-dev.txt  # adds playwright/mypy for UI tests & typing
+playwright install chromium          # browser for the UI suite
 
 # Run API server
 uvicorn api.main:app --reload

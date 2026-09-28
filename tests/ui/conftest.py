@@ -1,6 +1,7 @@
 """Pytest fixtures for UI tests."""
 
 import subprocess
+import sys
 import time
 
 import pytest
@@ -16,7 +17,7 @@ def server():
     and hanging every subsequent test.
     """
     proc = subprocess.Popen(
-        ["uvicorn", "api.main:app", "--port", "8765"],
+        [sys.executable, "-m", "uvicorn", "api.main:app", "--port", "8765"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
