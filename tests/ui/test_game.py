@@ -56,20 +56,22 @@ class TestBetting:
 
     def test_place_bet(self, game_page: Page):
         """Test placing a bet starts the game."""
+        from tests.ui.conftest import ANY_POST_BET_CONTROLS
+
         game_page.click("#btn-bet")
-        # After betting, action controls should become visible
-        game_page.wait_for_selector("#action-controls:not(.hidden)", timeout=5000)
-        expect(game_page.locator("#action-controls")).to_be_visible()
+        # After betting, the game advances past the betting state (player
+        # turn, insurance offer, or an instant resolution)
+        game_page.wait_for_selector(ANY_POST_BET_CONTROLS, timeout=5000)
+        expect(game_page.locator("#betting-controls")).to_be_hidden()
 
 
 class TestGameActions:
     """Tests for game action buttons."""
 
     @pytest.fixture
-    def active_game_page(self, game_page: Page):
-        """A page with an active game (bet placed)."""
-        game_page.click("#btn-bet")
-        game_page.wait_for_selector("#action-controls:not(.hidden)", timeout=5000)
+    def active_game_page(self, game_page: Page, reach_player_turn):
+        """A page with an active game (player turn reached)."""
+        reach_player_turn(game_page)
         return game_page
 
     def test_hit_button_visible(self, active_game_page: Page):
@@ -104,17 +106,18 @@ class TestKeyboardShortcuts:
     """Tests for keyboard shortcuts."""
 
     @pytest.fixture
-    def active_game_page(self, game_page: Page):
-        """A page with an active game (bet placed)."""
-        game_page.click("#btn-bet")
-        game_page.wait_for_selector("#action-controls:not(.hidden)", timeout=5000)
+    def active_game_page(self, game_page: Page, reach_player_turn):
+        """A page with an active game (player turn reached)."""
+        reach_player_turn(game_page)
         return game_page
 
     def test_b_key_places_bet(self, game_page: Page):
         """Test B key places bet."""
+        from tests.ui.conftest import ANY_POST_BET_CONTROLS
+
         game_page.keyboard.press("b")
-        game_page.wait_for_selector("#action-controls:not(.hidden)", timeout=5000)
-        expect(game_page.locator("#action-controls")).to_be_visible()
+        game_page.wait_for_selector(ANY_POST_BET_CONTROLS, timeout=5000)
+        expect(game_page.locator("#betting-controls")).to_be_hidden()
 
     def test_s_key_stands(self, active_game_page: Page):
         """Test S key stands."""

@@ -2,7 +2,7 @@
  * WebSocket client for real-time game updates
  */
 
-class GameWebSocket {
+export class GameWebSocket {
     constructor() {
         this.ws = null;
         this.sessionId = null;
@@ -10,6 +10,7 @@ class GameWebSocket {
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000;
         this.handlers = new Map();
+        this.pendingMessages = [];
     }
 
     /**
@@ -26,6 +27,9 @@ class GameWebSocket {
             console.log('WebSocket connected');
             this.reconnectAttempts = 0;
             this.emit('connected');
+            // Flush anything sent while the socket was still connecting
+            const pending = this.pendingMessages.splice(0);
+            pending.forEach(msg => this.ws.send(msg));
         };
 
         this.ws.onmessage = (event) => {
@@ -79,10 +83,14 @@ class GameWebSocket {
      * Send a message to the server
      */
     send(type, data = {}) {
+        const payload = JSON.stringify({ type, ...data });
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type, ...data }));
+            this.ws.send(payload);
+        } else if (this.pendingMessages.length < 20) {
+            // Queue until the socket opens (e.g. user acts during connect)
+            this.pendingMessages.push(payload);
         } else {
-            console.warn('WebSocket not connected');
+            console.warn('WebSocket not connected; message dropped');
         }
     }
 
@@ -137,63 +145,40 @@ class GameWebSocket {
 }
 
 // Game-specific WebSocket commands
-class BlackjackClient extends GameWebSocket {
-    /**
-     * Place a bet
-     */
+export class BlackjackClient extends GameWebSocket {
     placeBet(amount) {
         this.send('bet', { amount });
     }
 
-    /**
-     * Execute a player action
-     */
     action(action) {
         this.send('action', { action });
     }
 
-    /**
-     * Hit
-     */
     hit() {
         this.action('hit');
     }
 
-    /**
-     * Stand
-     */
     stand() {
         this.action('stand');
     }
 
-    /**
-     * Double down
-     */
     double() {
         this.action('double');
     }
 
-    /**
-     * Split
-     */
     split() {
         this.action('split');
     }
 
-    /**
-     * Surrender
-     */
     surrender() {
         this.action('surrender');
     }
 
-    /**
-     * Request new round
-     */
+    insurance(take) {
+        this.send('insurance', { take });
+    }
+
     newRound() {
         this.send('new_round');
     }
 }
-
-// Export for use in other scripts
-window.BlackjackClient = BlackjackClient;

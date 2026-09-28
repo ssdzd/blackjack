@@ -1,24 +1,59 @@
-"""WebSocket connection management with game engine integration."""
+"""WebSocket connection management with server-authoritative game sessions.
+
+Protocol (v2 — strictly additive over v1):
+
+Client -> server:
+- {"type": "bet", "amount": 100}
+- {"type": "action", "action": "hit"|"stand"|"double"|"split"|"surrender"}
+- {"type": "insurance", "take": true|false, "amount"?: 25}
+- {"type": "new_round"}
+- {"type": "reset_game"}
+- {"type": "get_state"}
+- {"type": "configure", "counting_system"?, "visibility"?, "rules_preset"?}
+- {"type": "reveal_count"}                     (on_request visibility)
+- {"type": "count_checkin", "running_count": 3}
+
+Server -> client:
+- {"type": "state_update", "state": {...}}     state has v:2, count/quant/rules
+- {"type": "event", "event_type", "data", "state", ["round_result"]}
+- {"type": "decision_result", "grade": {...}}  graded action/insurance/bet
+- {"type": "count_reveal", "count": {...}, "quant": {...}}
+- {"type": "count_checkin_result", {...}}
+- {"type": "error", "message": "..."}
+"""
 
 import asyncio
+from datetime import date
 from decimal import Decimal
+from random import Random
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
 import json
 
-from core.game import BlackjackGame
+from api.game_session import (
+    DailyRun,
+    RULE_PRESETS,
+    TrainingGameSession,
+    VISIBILITY_MODES,
+    COUNTING_SYSTEMS,
+)
+from api.progression_store import get_or_create_profile, load_profile, progress
+from api.routes.stats import record_stat_for_session
 from core.game.events import GameEvent, EventType
-from core.strategy.rules import RuleSet
+from core.progression import new_profile
+from core.progression.daily import challenge_for_date, score_daily, share_payload
+from core.progression.heat import apply_heat, heat_events, is_backed_off
+from core.progression.venues import VENUES, can_enter
 
 router = APIRouter()
 
 
 class ConnectionManager:
-    """Manage WebSocket connections and game instances."""
+    """Manage WebSocket connections and training sessions."""
 
     def __init__(self) -> None:
         self._connections: dict[str, WebSocket] = {}
-        self._games: dict[str, BlackjackGame] = {}
+        self._sessions: dict[str, TrainingGameSession] = {}
         self._event_queues: dict[str, asyncio.Queue] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str) -> None:
@@ -31,29 +66,31 @@ class ConnectionManager:
         """Remove a connection."""
         self._connections.pop(session_id, None)
         self._event_queues.pop(session_id, None)
-        # Keep the game for potential reconnection
+        # Keep the session for potential reconnection
 
-    def get_or_create_game(self, session_id: str) -> BlackjackGame:
-        """Get or create a game for the session."""
-        if session_id not in self._games:
-            game = BlackjackGame(
-                rules=RuleSet(),
-                initial_bankroll=Decimal("1000"),
-            )
-            self._games[session_id] = game
-            # Subscribe to all game events
-            game.subscribe(lambda event: self._queue_event(session_id, event))
-        return self._games[session_id]
+    def get_or_create_session(self, session_id: str) -> TrainingGameSession:
+        """Get or create a training session."""
+        if session_id not in self._sessions:
+            self._register_session(session_id, TrainingGameSession())
+        return self._sessions[session_id]
 
-    def reset_game(self, session_id: str) -> BlackjackGame:
-        """Reset the game for a session."""
-        game = BlackjackGame(
-            rules=RuleSet(),
-            initial_bankroll=Decimal("1000"),
-        )
-        self._games[session_id] = game
-        game.subscribe(lambda event: self._queue_event(session_id, event))
-        return game
+    def reset_session(self, session_id: str, **kwargs: Any) -> TrainingGameSession:
+        """Replace the session with a freshly configured one."""
+        old = self._sessions.get(session_id)
+        profile_id = None
+        if old is not None:
+            kwargs.setdefault("counting_system", old.counting_system_name)
+            kwargs.setdefault("visibility", old.visibility)
+            profile_id = old.profile_id
+        self._register_session(session_id, TrainingGameSession(**kwargs))
+        self._sessions[session_id].profile_id = profile_id
+        return self._sessions[session_id]
+
+    def _register_session(self, session_id: str, session: TrainingGameSession) -> None:
+        self._sessions[session_id] = session
+        # The session subscribed its own counter first; the queue handler
+        # runs after it, so serialized states already include the count.
+        session.game.subscribe(lambda event: self._queue_event(session_id, event))
 
     def _queue_event(self, session_id: str, event: GameEvent) -> None:
         """Queue an event for async delivery."""
@@ -101,75 +138,15 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _game_state_to_dict(game: BlackjackGame, hide_hole_card: bool = False) -> dict:
-    """Convert game state to a dictionary for JSON serialization."""
-    dealer_cards = []
-    for i, card in enumerate(game.dealer_hand.cards):
-        if hide_hole_card and i == 1:
-            dealer_cards.append({"rank": "?", "suit": "?", "value": 0, "hidden": True})
-        else:
-            dealer_cards.append({
-                "rank": str(card.rank),
-                "suit": str(card.suit),
-                "value": card.value,
-                "hidden": False,
-            })
-
-    player_hands = []
-    for hand in game.player.hands:
-        player_hands.append({
-            "cards": [
-                {"rank": str(c.rank), "suit": str(c.suit), "value": c.value}
-                for c in hand.cards
-            ],
-            "value": hand.value,
-            "is_soft": hand.is_soft,
-            "is_blackjack": hand.is_blackjack,
-            "is_busted": hand.is_busted,
-            "bet": hand.bet,
-        })
-
-    # Calculate dealer showing value
-    dealer_showing = None
-    if game.dealer_hand.cards and not hide_hole_card:
-        dealer_showing = game.dealer_hand.value
-    elif game.dealer_hand.cards:
-        dealer_showing = game.dealer_hand.cards[0].value
-
-    return {
-        "state": game.state.name,
-        "player_hands": player_hands,
-        "current_hand_index": game.player.current_hand_index,
-        "dealer_hand": {
-            "cards": dealer_cards,
-            "value": dealer_showing if not hide_hole_card else None,
-        },
-        "dealer_showing": dealer_showing,
-        "bankroll": float(game.player.bankroll),
-        "can_hit": game.can_hit,
-        "can_stand": game.can_stand,
-        "can_double": game.can_double,
-        "can_split": game.can_split,
-        "can_surrender": game.can_surrender,
-        "can_insure": game.can_insure,
-        "insurance_bet": float(game.player.insurance_bet),
-        "shoe_cards_remaining": game.shoe.cards_remaining,
-        "shoe_decks_remaining": round(game.shoe.cards_remaining / 52, 2),
-    }
-
-
-def _event_to_message(event: GameEvent, game: BlackjackGame) -> dict[str, Any]:
+def _event_to_message(event: GameEvent, session: TrainingGameSession) -> dict[str, Any]:
     """Convert a game event to a WebSocket message."""
-    hide_hole = game.state.name in ("PLAYER_TURN", "OFFERING_INSURANCE")
-
     base_message = {
         "type": "event",
         "event_type": event.event_type.name,
         "data": event.data,
-        "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+        "state": session.state_payload(),
     }
 
-    # Add specific fields based on event type
     if event.event_type == EventType.ROUND_ENDED:
         base_message["round_result"] = {
             "net_result": event.data.get("result", 0),
@@ -179,31 +156,188 @@ def _event_to_message(event: GameEvent, game: BlackjackGame) -> dict[str, Any]:
     return base_message
 
 
+async def _record_round(session_id: str, session: TrainingGameSession) -> None:
+    """Persist a finished round into performance stats (server-side)."""
+    info = session.last_round_result
+    if not info:
+        return
+    result = info.get("result", 0) or 0
+    if result > 0:
+        stat_type = "hand_blackjack" if info.get("player_blackjack") else "hand_win"
+    elif result < 0:
+        stat_type = "hand_loss"
+    else:
+        stat_type = "hand_push"
+    try:
+        # value is the amount wagered; the realized net rides in details so
+        # a $10 blackjack records $10 wagered / +$15, not $15 / +$22.50.
+        await record_stat_for_session(
+            session_id,
+            stat_type,
+            value=info.get("wager", 0) or abs(result),
+            details={"bankroll": info.get("bankroll", 0), "net": result},
+        )
+    except Exception:
+        pass  # Stats persistence must never break gameplay
+
+
+async def _push_progression(
+    session_id: str,
+    session: TrainingGameSession,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """Apply a progression event and push the delta if anything happened."""
+    delta = await progress(session.profile_id, event_type, payload)
+    if delta is None:
+        return
+    if (
+        delta.xp_gained > 0
+        or delta.badges_awarded
+        or delta.node_changes
+        or delta.level_up
+    ):
+        await manager.send_message(session_id, {
+            "type": "progression",
+            "delta": delta.model_dump(mode="json"),
+        })
+
+
+async def _finalize_daily(session_id: str, session: TrainingGameSession) -> None:
+    """Score a finished daily run, record it, and notify the client."""
+    run = session.daily_run
+    if run is None or run.done:
+        return
+    run.done = True
+
+    net = float(session.game.player.bankroll) - float(run.challenge.bankroll)
+    score = score_daily(run.decisions, run.checkins, net)
+    share = share_payload(run.challenge, score, run.round_results)
+
+    await _push_progression(
+        session_id, session, "daily_complete",
+        {
+            "date": run.challenge.date,
+            "score": score.score,
+            "grade": score.grade,
+            "decisions_pct": score.decisions_pct,
+            "counts_pct": score.counts_pct,
+            "net": net,
+        },
+    )
+
+    await manager.send_message(session_id, {
+        "type": "daily_complete",
+        "number": run.challenge.number,
+        "date": run.challenge.date,
+        "score": score.score,
+        "grade": score.grade,
+        "breakdown": score.breakdown,
+        "decisions_pct": score.decisions_pct,
+        "counts_pct": score.counts_pct,
+        "net": net,
+        "round_results": run.round_results,
+        **share,
+    })
+
+
+async def _venue_round_ended(session_id: str, session: TrainingGameSession) -> None:
+    """Career bookkeeping after a round at a venue."""
+    venue = session.venue
+    if venue is None:
+        return
+
+    session.hands_at_venue += 1
+    bankroll = float(session.game.player.bankroll)
+
+    if (
+        venue.target is not None
+        and bankroll >= venue.target
+        and not session.venue_cleared
+    ):
+        session.venue_cleared = True
+        await _push_progression(
+            session_id, session, "venue_complete",
+            {"venue_id": venue.id, "max_heat": session.max_heat},
+        )
+        await manager.send_message(session_id, {
+            "type": "venue_complete",
+            "venue_id": venue.id,
+            "name": venue.name,
+            "bankroll": bankroll,
+            "target": venue.target,
+            "max_heat": round(session.max_heat, 2),
+        })
+
+    if session.game.state.name == "GAME_OVER":
+        await manager.send_message(session_id, {
+            "type": "venue_bust",
+            "venue_id": venue.id,
+            "name": venue.name,
+            "lesson": (
+                "Bankroll gone. Risk of ruin is not a metaphor — size your "
+                "bets to survive the variance, not to impress it."
+            ),
+        })
+
+
+async def _daily_round_ended(session_id: str, session: TrainingGameSession) -> None:
+    """Advance daily bookkeeping after a round resolves."""
+    run = session.daily_run
+    if run is None or run.done:
+        return
+
+    run.close_round()
+
+    await manager.send_message(session_id, {
+        "type": "daily_progress",
+        "round": run.rounds_played,
+        "rounds": run.challenge.rounds,
+    })
+
+    if run.rounds_played in run.challenge.checkin_rounds:
+        run.awaiting_checkin = True
+        await manager.send_message(session_id, {
+            "type": "count_checkin_request",
+            "round": run.rounds_played,
+        })
+
+    game_over = session.game.state.name == "GAME_OVER"
+    if (run.rounds_finished or game_over) and not run.awaiting_checkin:
+        await _finalize_daily(session_id, session)
+
+
+def _grade_to_event(grade) -> tuple[str, dict[str, Any]]:
+    """Translate a DecisionGrade into a progression event."""
+    if grade.kind == "action":
+        return "decision", {
+            "correct": grade.is_correct,
+            "is_deviation": grade.is_deviation,
+            "visibility": "always",  # overwritten by caller
+            "fab4": bool(
+                grade.is_deviation
+                and grade.deviation
+                and grade.deviation.get("deviation_action") == "surrender"
+            ),
+        }
+    if grade.kind == "insurance":
+        return "insurance", {
+            "correct": grade.is_correct,
+            "correct_action": grade.correct_action,
+        }
+    return "bet", {"in_band": grade.is_correct}
+
+
 @router.websocket("/game/{session_id}")
 async def game_websocket(websocket: WebSocket, session_id: str) -> None:
-    """
-    WebSocket endpoint for real-time game updates.
-
-    Messages from client:
-    - {"type": "bet", "amount": 100}
-    - {"type": "action", "action": "hit"|"stand"|"double"|"split"|"surrender"}
-    - {"type": "new_round"}
-    - {"type": "reset_game"}
-    - {"type": "get_state"}
-
-    Messages to client:
-    - {"type": "state_update", "state": {...}}
-    - {"type": "event", "event_type": "...", "data": {...}, "state": {...}}
-    - {"type": "error", "message": "..."}
-    """
+    """WebSocket endpoint for real-time game updates (see module docstring)."""
     await manager.connect(websocket, session_id)
-    game = manager.get_or_create_game(session_id)
+    session = manager.get_or_create_session(session_id)
 
     # Send initial state
-    hide_hole = game.state.name == "PLAYER_TURN"
     await manager.send_message(session_id, {
         "type": "state_update",
-        "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+        "state": session.state_payload(),
     })
 
     async def process_events():
@@ -211,8 +345,16 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
         while True:
             event = await manager.get_event(session_id)
             if event:
-                message = _event_to_message(event, game)
+                message = _event_to_message(event, session)
                 await manager.send_message(session_id, message)
+                if event.event_type == EventType.ROUND_ENDED:
+                    await _record_round(session_id, session)
+                    await _push_progression(
+                        session_id, session, "round",
+                        {"result": (session.last_round_result or {}).get("result", 0)},
+                    )
+                    await _daily_round_ended(session_id, session)
+                    await _venue_round_ended(session_id, session)
             else:
                 await asyncio.sleep(0.01)
 
@@ -226,30 +368,236 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
             msg_type = message.get("type")
 
             if msg_type == "get_state":
-                hide_hole = game.state.name == "PLAYER_TURN"
                 await manager.send_message(session_id, {
                     "type": "state_update",
-                    "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+                    "state": session.state_payload(),
                 })
 
-            elif msg_type == "bet":
-                amount = message.get("amount", 0)
-                if amount < 10 or amount > 1000:
+            elif msg_type == "configure":
+                if message.get("profile_id"):
+                    session.profile_id = str(message["profile_id"])
+                system = message.get("counting_system")
+                visibility = message.get("visibility")
+                preset = message.get("rules_preset")
+                venue_id = message.get("venue_id")
+
+                if venue_id is not None:
+                    venue = VENUES.get(venue_id)
+                    if venue is None:
+                        await manager.send_message(session_id, {
+                            "type": "error", "message": "Unknown venue",
+                        })
+                        continue
+                    # Gate-check a real profile: an unknown id gets a fresh
+                    # career created on the spot, and no profile at all is
+                    # judged as one — a missing profile must never bypass
+                    # the venue's unlock and mastery gates.
+                    if session.profile_id:
+                        try:
+                            profile = await get_or_create_profile(session.profile_id)
+                        except Exception:
+                            profile = new_profile()  # store down: judge a fresh career
+                    else:
+                        profile = new_profile()
+                    if not can_enter(venue, profile):
+                        await manager.send_message(session_id, {
+                            "type": "error",
+                            "message": "That room isn't open to you yet — check its gates.",
+                        })
+                        continue
+                    session = manager.reset_session(
+                        session_id,
+                        rules=venue.rules,
+                        initial_bankroll=Decimal(venue.buy_in),
+                        penetration=venue.penetration,
+                    )
+                    session.venue = venue
                     await manager.send_message(session_id, {
-                        "type": "error",
-                        "message": "Bet must be between $10 and $1000",
+                        "type": "venue_entered",
+                        "venue_id": venue.id,
+                        "name": venue.name,
+                        "target": venue.target,
+                        "buy_in": venue.buy_in,
+                        "heat_tolerance": venue.heat_tolerance,
+                        "trap": venue.trap,
+                        "house_edge_pct": venue.house_edge_pct,
+                        "rules_summary": venue.rules_summary(),
+                    })
+                    await manager.send_message(session_id, {
+                        "type": "state_update",
+                        "state": session.state_payload(),
                     })
                     continue
 
-                success = game.bet(int(amount))
+                if preset is not None and preset in RULE_PRESETS:
+                    session = manager.reset_session(
+                        session_id,
+                        rules=RULE_PRESETS[preset](),
+                        counting_system=message.get(
+                            "counting_system", session.counting_system_name
+                        ),
+                        visibility=message.get("visibility", session.visibility),
+                    )
+                else:
+                    if system in COUNTING_SYSTEMS:
+                        session.set_counting_system(system)
+                    if visibility in VISIBILITY_MODES:
+                        session.visibility = visibility
+
+                await manager.send_message(session_id, {
+                    "type": "state_update",
+                    "state": session.state_payload(),
+                })
+
+            elif msg_type == "start_daily":
+                today = date.today()
+                challenge = challenge_for_date(today)
+
+                # One attempt per day per profile
+                if session.profile_id:
+                    profile = await load_profile(session.profile_id)
+                    if profile and challenge.date in profile.daily:
+                        await manager.send_message(session_id, {
+                            "type": "error",
+                            "message": "You already played today's daily. Come back tomorrow.",
+                        })
+                        continue
+
+                session = manager.reset_session(
+                    session_id,
+                    rules=challenge.rules,
+                    initial_bankroll=Decimal(challenge.bankroll),
+                    counting_system="hilo",
+                    visibility="hidden",
+                    rng=Random(challenge.seed),
+                )
+                session.daily_run = DailyRun(challenge=challenge)
+
+                await manager.send_message(session_id, {
+                    "type": "daily_started",
+                    "number": challenge.number,
+                    "date": challenge.date,
+                    "rounds": challenge.rounds,
+                    "checkin_rounds": list(challenge.checkin_rounds),
+                    "min_bet": challenge.min_bet,
+                    "max_bet": challenge.max_bet,
+                })
+                await manager.send_message(session_id, {
+                    "type": "state_update",
+                    "state": session.state_payload(),
+                })
+
+            elif msg_type == "reveal_count":
+                await manager.send_message(session_id, {
+                    "type": "count_reveal",
+                    "count": session.count_payload(),
+                    "quant": session.quant_snapshot(),
+                })
+
+            elif msg_type == "count_checkin":
+                answer = message.get("running_count")
+                if answer is None:
+                    await manager.send_message(session_id, {
+                        "type": "error",
+                        "message": "count_checkin requires running_count",
+                    })
+                    continue
+                result = session.grade_count_checkin(float(answer))
+                await manager.send_message(session_id, {
+                    "type": "count_checkin_result",
+                    **result,
+                })
+                await _push_progression(
+                    session_id, session, "checkin",
+                    {"exact": result["correct"], "close": result["close"]},
+                )
+                run = session.daily_run
+                if run and run.awaiting_checkin and not run.done:
+                    run.checkins.append(bool(result["correct"]))
+                    run.awaiting_checkin = False
+                    if run.rounds_finished or session.game.state.name == "GAME_OVER":
+                        await _finalize_daily(session_id, session)
+
+            elif msg_type == "bet":
+                amount = message.get("amount", 0)
+                rules = session.rules
+                min_bet, max_bet = rules.min_bet, rules.max_bet
+                if session.daily_run and not session.daily_run.done:
+                    if session.daily_run.rounds_finished:
+                        await manager.send_message(session_id, {
+                            "type": "error",
+                            "message": "The daily is over — answer the final count check-in.",
+                        })
+                        continue
+                    min_bet = session.daily_run.challenge.min_bet
+                    max_bet = session.daily_run.challenge.max_bet
+                if amount < min_bet or amount > max_bet:
+                    await manager.send_message(session_id, {
+                        "type": "error",
+                        "message": f"Bet must be between ${min_bet} and ${max_bet}",
+                    })
+                    continue
+
+                # Career heat: the pit watches the bet before the cards fly
+                if session.venue is not None and session.game.state.name == "WAITING_FOR_BET":
+                    events = heat_events(
+                        int(amount),
+                        session.prev_bet,
+                        session._tc_for_grading(),
+                        session.venue.rules.min_bet,
+                        session.venue.rules.max_bet,
+                        session.venue.heat_tolerance,
+                    )
+                    session.heat = apply_heat(session.heat, events)
+                    session.max_heat = max(session.max_heat, session.heat)
+                    session.prev_bet = int(amount)
+                    if events and any(e.delta > 0 for e in events):
+                        await manager.send_message(session_id, {
+                            "type": "heat",
+                            "heat": round(session.heat, 2),
+                            "events": [
+                                {"delta": e.delta, "reason": e.reason}
+                                for e in events
+                            ],
+                        })
+                    if is_backed_off(session.heat):
+                        venue_name = session.venue.name
+                        await manager.send_message(session_id, {
+                            "type": "backed_off",
+                            "venue_id": session.venue.id,
+                            "name": venue_name,
+                            "reasons": [e.reason for e in events if e.delta > 0],
+                            "lesson": (
+                                "A pit boss taps your shoulder: 'Your game's a "
+                                "little too good for us.' Counting is legal; being "
+                                "obvious is expensive. Camouflage your spread."
+                            ),
+                        })
+                        session = manager.reset_session(session_id)
+                        await manager.send_message(session_id, {
+                            "type": "state_update",
+                            "state": session.state_payload(),
+                        })
+                        continue
+
+                grade = session.grade_bet(int(amount))
+                success = session.game.bet(int(amount))
                 if not success:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": "Cannot place bet in current state",
                     })
+                elif grade:
+                    await manager.send_message(session_id, {
+                        "type": "decision_result",
+                        "grade": grade.to_dict(),
+                    })
+                    event_type, payload = _grade_to_event(grade)
+                    await _push_progression(session_id, session, event_type, payload)
 
             elif msg_type == "action":
                 action = message.get("action")
+                game = session.game
                 actions = {
                     "hit": game.hit,
                     "stand": game.stand,
@@ -266,42 +614,85 @@ async def game_websocket(websocket: WebSocket, session_id: str) -> None:
                     })
                     continue
 
+                grade = session.grade_action(action)
                 success = action_fn()
                 if not success:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": f"Cannot {action} now",
                     })
+                elif grade:
+                    await manager.send_message(session_id, {
+                        "type": "decision_result",
+                        "grade": grade.to_dict(),
+                    })
+                    if session.daily_run and not session.daily_run.done:
+                        session.daily_run.record_decision(grade.is_correct)
+                    event_type, payload = _grade_to_event(grade)
+                    payload["visibility"] = session.visibility
+                    await _push_progression(session_id, session, event_type, payload)
 
             elif msg_type == "insurance":
-                # Handle insurance decision
                 take_insurance = message.get("take", False)
+                grade = session.grade_insurance(bool(take_insurance))
                 if take_insurance:
                     amount = message.get("amount")  # Optional, defaults to half bet
-                    success = game.take_insurance(amount)
+                    success = session.game.take_insurance(amount)
                 else:
-                    success = game.decline_insurance()
+                    success = session.game.decline_insurance()
 
                 if not success:
                     await manager.send_message(session_id, {
                         "type": "error",
                         "message": "Cannot make insurance decision now",
                     })
+                else:
+                    await manager.send_message(session_id, {
+                        "type": "decision_result",
+                        "grade": grade.to_dict(),
+                    })
+                    if session.daily_run and not session.daily_run.done:
+                        session.daily_run.record_decision(grade.is_correct)
+                    event_type, payload = _grade_to_event(grade)
+                    await _push_progression(session_id, session, event_type, payload)
+
+            elif msg_type == "leave_venue":
+                venue = session.venue
+                if venue is not None:
+                    if venue.trap and session.hands_at_venue < 10:
+                        await _push_progression(
+                            session_id, session, "trap_walkaway",
+                            {"venue_id": venue.id},
+                        )
+                        await manager.send_message(session_id, {
+                            "type": "trap_walkaway",
+                            "message": (
+                                f"You checked the 6:5 payout, did the math, and "
+                                f"walked. The {venue.name} keeps its edge — but "
+                                "not your money."
+                            ),
+                        })
+                    session = manager.reset_session(session_id)
+                await manager.send_message(session_id, {
+                    "type": "venue_left",
+                })
+                await manager.send_message(session_id, {
+                    "type": "state_update",
+                    "state": session.state_payload(),
+                })
 
             elif msg_type == "new_round":
                 # Game auto-transitions to WAITING_FOR_BET after ROUND_COMPLETE
-                # Just send current state
-                hide_hole = game.state.name == "PLAYER_TURN"
                 await manager.send_message(session_id, {
                     "type": "state_update",
-                    "state": _game_state_to_dict(game, hide_hole_card=hide_hole),
+                    "state": session.state_payload(),
                 })
 
             elif msg_type == "reset_game":
-                game = manager.reset_game(session_id)
+                session = manager.reset_session(session_id, rules=session.rules)
                 await manager.send_message(session_id, {
                     "type": "state_update",
-                    "state": _game_state_to_dict(game),
+                    "state": session.state_payload(),
                 })
 
             else:

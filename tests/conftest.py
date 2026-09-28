@@ -1,8 +1,21 @@
 """Pytest fixtures for blackjack trainer tests."""
 
+import importlib.util
+import warnings
+
 import pytest
 from decimal import Decimal
 from random import Random
+
+# The UI suite drives a real browser. With a runtime-only install
+# (no playwright), skip collecting tests/ui instead of erroring out;
+# CI runs it in a dedicated job with Chromium provisioned.
+if importlib.util.find_spec("playwright") is None:
+    collect_ignore = ["ui"]
+    warnings.warn(
+        "tests/ui skipped: playwright not installed "
+        "(pip install -r requirements-dev.txt && playwright install chromium)"
+    )
 
 from core.cards import Card, Deck, Shoe, Rank, Suit
 from core.hand import Hand
