@@ -8,7 +8,9 @@ needs:
     dist/web/              the playable site: open index.html from any folder
     dist/blackjack-web.zip that folder zipped, ready to upload to itch.io
     dist/artifact/         (--artifact) the same game shaped for a claude.ai
-                           Artifact: no document skeleton, fonts inlined
+                           Artifact: no document skeleton, fonts inlined, and
+                           archives (which Artifacts don't serve) packed as
+                           base64 JSON
 
 Usage:
     python scripts/build_web.py [--artifact] [--out dist]
@@ -242,6 +244,28 @@ def inline_fonts(css: str, fonts_dir: Path) -> str:
     return re.sub(r'url\("\.\./assets/fonts/([^"]+\.woff2)"\)', embed, css)
 
 
+def pack_archives(site: Path) -> dict[str, str]:
+    """Swap each .zip/.whl for a base64 JSON copy, for hosts that serve no archives.
+
+    Returns {bundle path: packed path} for bundle.json's "packed" map;
+    web/boot.js decodes a packed file in memory when it is fetched.
+    """
+    packed = {}
+    for path in sorted(site.rglob("*")):
+        if not (path.is_file() and path.suffix in (".zip", ".whl")):
+            continue
+        rel = path.relative_to(site).as_posix()
+        target = site / "packed" / f"{rel}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({
+            "contentType": "application/zip",
+            "base64": base64.b64encode(path.read_bytes()).decode(),
+        }))
+        path.unlink()
+        packed[rel] = target.relative_to(site).as_posix()
+    return packed
+
+
 def make_artifact(site: Path, out: Path) -> None:
     if out.exists():
         shutil.rmtree(out)
@@ -253,6 +277,14 @@ def make_artifact(site: Path, out: Path) -> None:
     tokens.write_text(inline_fonts(tokens.read_text(), fonts))
     for font in fonts.glob("*.woff2"):
         font.unlink()
+
+    bundle = out / "bundle.json"
+    manifest = json.loads(bundle.read_text())
+    manifest["packed"] = pack_archives(out)
+    bundle.write_text(json.dumps(manifest, indent=2) + "\n")
+    for folder in sorted(out.rglob("*"), reverse=True):
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
 
 
 # ---- CLI ----

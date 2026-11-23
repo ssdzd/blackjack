@@ -61,6 +61,26 @@ class TestArtifactPage:
         for kept in ('href="css/tokens.css"', '<div id="app">', 'src="js/main.js"'):
             assert kept in page
 
+    def test_archives_are_packed_as_json(self, tmp_path):
+        import base64
+        import json
+
+        (tmp_path / "wheels").mkdir()
+        (tmp_path / "wheels" / "a-1.0-py3-none-any.whl").write_bytes(b"PK\x03\x04wheel")
+        (tmp_path / "app.zip").write_bytes(b"PK\x03\x04app")
+        (tmp_path / "boot.js").write_text("// untouched")
+
+        packed = build_web.pack_archives(tmp_path)
+
+        assert packed == {
+            "app.zip": "packed/app.zip.json",
+            "wheels/a-1.0-py3-none-any.whl": "packed/wheels/a-1.0-py3-none-any.whl.json",
+        }
+        record = json.loads((tmp_path / "packed" / "app.zip.json").read_text())
+        assert base64.b64decode(record["base64"]) == b"PK\x03\x04app"
+        assert not (tmp_path / "app.zip").exists()
+        assert (tmp_path / "boot.js").exists()
+
     def test_fonts_become_data_uris(self, tmp_path):
         (tmp_path / "A.woff2").write_bytes(b"wOF2fake")
         css = build_web.inline_fonts('src: url("../assets/fonts/A.woff2") format("woff2");', tmp_path)

@@ -26,15 +26,42 @@ let bridge = null;
 let overlay;
 let engine;
 
+// Archives a host won't serve (a claude.ai Artifact serves no .zip or .whl)
+// ship base64-encoded in JSON instead: bundle path -> packed JSON path.
+const packed = new Map();
+
 // ---- Engine ----
 
+/** Fetch a bundle file through the shim, so packed archives resolve too. */
 async function getFile(path) {
     const url = new URL(path, BASE);
-    const response = await realFetch(url);
+    const response = await window.fetch(url);
     if (!response.ok) {
         throw new Error(`Couldn't load ${url.pathname} (HTTP ${response.status}).`);
     }
     return response;
+}
+
+function packedSource(url) {
+    if (!url.href.startsWith(BASE.href)) return null;
+    return packed.get(url.href.slice(BASE.href.length).split(/[?#]/)[0]) ?? null;
+}
+
+async function unpack(source) {
+    const response = await realFetch(new URL(source, BASE));
+    if (!response.ok) {
+        throw new Error(`Couldn't load ${source} (HTTP ${response.status}).`);
+    }
+    const { contentType, base64 } = await response.json();
+    return new Response(decodeBase64(base64), { headers: { 'Content-Type': contentType } });
+}
+
+function decodeBase64(text) {
+    if (typeof Uint8Array.fromBase64 === 'function') return Uint8Array.fromBase64(text);
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
 }
 
 /**
@@ -56,6 +83,7 @@ async function assertWebAssembly() {
 async function boot() {
     await assertWebAssembly();
     const manifest = await (await getFile('bundle.json')).json();
+    for (const [path, source] of Object.entries(manifest.packed ?? {})) packed.set(path, source);
 
     overlay.step('Downloading the Python engine…', 0.12);
     const runtime = new URL(manifest.runtime, BASE).href;
@@ -114,6 +142,8 @@ function installFetchShim() {
     window.fetch = async function fetch(input, init = {}) {
         const request = input instanceof Request ? input : null;
         const url = new URL(request ? request.url : String(input), location.href);
+        const source = packedSource(url);
+        if (source) return unpack(source);
         if (!isLocalRoute(url, '/api/')) return realFetch(input, init);
 
         const method = init.method ?? request?.method ?? 'GET';
@@ -322,7 +352,7 @@ function showOverlay() {
 
 guardStorage();
 overlay = showOverlay();
-engine = boot();
-engine.then(() => overlay.done(), (error) => overlay.fail(error));
 installFetchShim();
 installWebSocketShim();
+engine = boot();
+engine.then(() => overlay.done(), (error) => overlay.fail(error));
