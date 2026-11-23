@@ -65,7 +65,7 @@ development. Player profiles persist for 90 days per browser (localStorage id).
 pip install -r requirements-dev.txt
 playwright install chromium   # for the UI suite
 
-pytest                        # ~380 tests: core, api, websocket, browser UI
+pytest                        # ~400 tests: core, api, websocket, browser UI
 pytest tests/core -q          # engine + progression only (fast)
 ```
 
@@ -74,6 +74,24 @@ tests still run — CI runs it in a dedicated job.
 
 The UI suite boots its own uvicorn on port 8765 and drives a headless
 Chromium. Run one pytest at a time — two suites fight over the port.
+
+### Browser build (itch.io)
+
+The game also ships as a static site with no server: the same FastAPI app
+runs inside the page on [Pyodide](https://pyodide.org) (CPython compiled to
+WebAssembly). `web/boot.js` routes the frontend's `/api/...` calls and game
+WebSocket to `web/bridge.py`, which drives the app in-process, and careers
+are kept in the browser's `localStorage`.
+
+```bash
+python scripts/build_web.py       # dist/web/ and dist/blackjack-web.zip
+```
+
+Upload `dist/blackjack-web.zip` to an itch.io project of kind **HTML**. The
+first visit downloads about 9 MB, cached afterwards. The wheels it bundles
+are pinned in `web/requirements-web.txt`; keep them in step with the
+versions CI tests against. CI's browser-build job builds the site, plays a
+round in Chromium, and keeps the ZIP as a workflow artifact.
 
 ## Architecture
 

@@ -9,6 +9,8 @@
  */
 
 :root {
+    color-scheme: dark;              /* one deliberate look: native controls follow it */
+
     /* ---- Surfaces ---- */
     --room: #0a0c0b;                 /* the dark room around the table */
     --ink: #070908;                  /* deepest shadow */
@@ -86,7 +88,7 @@
    fallback stack instead of rendering as tofu. */
 @font-face {
     font-family: "Cormorant Garamond";
-    src: url("/assets/fonts/CormorantGaramond-SemiBold.woff2") format("woff2");
+    src: url("../assets/fonts/CormorantGaramond-SemiBold.woff2") format("woff2");
     font-weight: 600;
     font-style: normal;
     font-display: swap;
@@ -95,7 +97,7 @@
 }
 @font-face {
     font-family: "Cormorant Garamond";
-    src: url("/assets/fonts/CormorantGaramond-Bold.woff2") format("woff2");
+    src: url("../assets/fonts/CormorantGaramond-Bold.woff2") format("woff2");
     font-weight: 700;
     font-style: normal;
     font-display: swap;
@@ -104,7 +106,7 @@
 }
 @font-face {
     font-family: "JetBrains Mono";
-    src: url("/assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+    src: url("../assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
     font-weight: 400;
     font-style: normal;
     font-display: swap;
@@ -113,7 +115,7 @@
 }
 @font-face {
     font-family: "JetBrains Mono";
-    src: url("/assets/fonts/JetBrainsMono-SemiBold.woff2") format("woff2");
+    src: url("../assets/fonts/JetBrainsMono-SemiBold.woff2") format("woff2");
     font-weight: 600;
     font-style: normal;
     font-display: swap;

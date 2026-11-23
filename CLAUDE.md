@@ -30,6 +30,7 @@ core/           # Pure Python, no UI dependencies
 └── game/       # State machine, event system
 api/            # FastAPI layer
 frontend/       # Static files (HTML/CSS/JS)
+web/            # Browser build: Pyodide loader + in-process ASGI bridge
 tests/          # pytest tests mirroring core/ and api/ structure
 ```
 
@@ -50,6 +51,9 @@ uvicorn api.main:app --reload
 pytest
 pytest tests/core/test_counting.py -v    # Single test file
 pytest -k "test_hilo"                     # Run tests matching pattern
+
+# Browser build: static site running the app on Pyodide (itch.io upload)
+python scripts/build_web.py              # dist/web/ + dist/blackjack-web.zip
 
 # Type checking (if mypy is used)
 mypy core/

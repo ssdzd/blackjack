@@ -12,3 +12,7 @@ test-results/
 
 # OS / editor
 .DS_Store
+
+# Browser build (scripts/build_web.py)
+build/
+dist/
